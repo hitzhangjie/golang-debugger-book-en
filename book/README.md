@@ -1,58 +1,57 @@
-# 1 Go语言调试器开发
+# The Art of Debugging: Debugger Internals
 
-<img alt="封面图片" src="bookcover.jpeg" width="320px" />
+<img alt="Cover Image" src="bookcover.jpeg" width="320px" />
 
-## 1.1 作者简介
+## 1.1 Author Introduction
 
-Hi，我是张杰，目前就职于腾讯（深圳）科技有限公司，后台开发高级工程师。在腾讯工作期间，曾先后从事Now直播后台、看点后台、信息流内容处理系统方面的建设，也作为核心开发先后参与了微服务框架goneat、trpc的设计、开发，以及公司代码规范的制定、职级晋升、实习生留用等代码评审工作。
+Hi, I'm Zhang Jie, currently working as a Senior Backend Engineer at Tencent (Shenzhen) Technology Co., Ltd. During my time at Tencent, I have worked on the backend development of Now Live, KanDian, and content processing systems for information feeds. I have also participated as a core developer in the design and development of microservice frameworks goneat and trpc, as well as in code review work for company code standards, career advancement, and intern retention.
 
-从高中毕业开始接触编程，到大学系统性学习，再到毕业参加工作至今，一转眼十年过去。计算机技术的发展始终吸引着我去学习、去思考、去探索更广阔的应用场景来丰富我们的现实生活。
+From my first exposure to programming after high school, through systematic learning in university, to my work experience to date, ten years have passed. The development of computer technology continues to attract me to learn, think, and explore broader application scenarios to enrich our real lives.
 
-开源让我接触了更大的世界，在开源中学习，在开源中贡献。我很欣赏那种技术精湛、乐于分享甚至连指尖都洋溢着才华与天赋的工程师，并将这类人作为我的榜样，在工作学习实践中也经常总结与分享，本书就是其中一个例子。
+Open source has exposed me to a larger world, where I learn and contribute. I greatly admire engineers who are technically skilled, willing to share, and whose fingertips exude talent and genius. I take such people as my role models and frequently summarize and share in my work and learning practice. This book is one such example.
 
-## 1.2 关于本书
+## 1.2 About This Book
 
-计算机是个系统性工程，比如“一个程序是如何运行的”，看似简单的问题牵扯到了编程语言、编译器、链接器、操作系统、处理器、内存、总线控制等方方面面的内容，要掌握这些内容需要长时间的学习与实践。
+Computer science is a systematic engineering. For example, a seemingly simple question like "how does a program run" involves many aspects such as programming languages, compilers, linkers, operating systems, processors, memory, bus control, etc. Mastering these requires long-term learning and practice.
 
-我是从2016年开始了解go语言，2018年开始正式将其作为主力开发语言，期间还经历了些小插曲——对go的抵触。在深入了解c、cpp、java第三方协程库支持以及开发实践之后，最终认识到了go的优雅并决定掌握go。
+I started learning about Go in 2016 and began using it as my primary development language in 2018, with some interesting twists along the way - including initial resistance to Go. After gaining a deep understanding of C, C++, Java's third-party coroutine library support, and development practices, I finally recognized Go's elegance and decided to master it.
 
-学习go时，新手难免会遇到通过调试来认识语言细节的情况。delve是一款针对go语言的符号级调试器，在使用delve的过程中联想到可以从调试器角度切入来窥探计算机世界的秘密。不管是什么编程语言，只要有调试信息支持，总能借助调试器来窥探进程的运行过程。形象点的话可以联想下FPS游戏，一倍镜窥探代码执行，二倍镜窥探变量，三倍镜窥探类型系统，四倍镜窥探硬件特性……有什么能逃过调试器的法眼呢？
+When learning Go, beginners often need to understand language details through debugging. Delve is a symbol-level debugger for Go. While using Delve, I realized that we could explore the secrets of the computer world from the perspective of a debugger. Regardless of the programming language, as long as there is debugging information support, we can always use a debugger to peek into the process's execution. To put it figuratively, it's like an FPS game: 1x scope to peek at code execution, 2x scope to peek at variables, 3x scope to peek at the type system, 4x scope to peek at hardware features... what can escape the debugger's eye?
 
-本书希望能从go调试器角度出发让开发者更好地理解go编程语言、编译器、链接器、操作系统、调试器、硬件之间的联系，这会比割裂似的课程教学更容易让读者认识到它们各自的价值以及彼此间密切的协作。开发者也将掌握调试器开发能力，从而可以开发一些针对语言级别的运行时分析、调试能力。
+This book hopes to help developers better understand the connections between Go programming language, compiler, linker, operating system, debugger, and hardware from the perspective of a Go debugger. This will be more effective than fragmented course teaching in helping readers understand their respective values and close collaboration. Developers will also master debugger development capabilities, enabling them to develop runtime analysis and debugging capabilities at the language level.
 
-## 1.3 本书内容
+## 1.3 Book Content
 
-调试过程，并不只是调试器的工作，也涉及到到了源码、编译器、链接器、调试信息标准，因此从（本书）调试器视角来看，它看到的是一连串的协作过程，可以给开发者更宏观的视角来审视软件开发的位置。
+The debugging process is not just the work of the debugger; it also involves source code, compiler, linker, and debugging information standards. Therefore, from the debugger's perspective, it sees a series of collaborative processes, giving developers a more macro view to examine the position of software development.
 
-调试标准，调试信息格式有多种标准，在了解调试信息标准的过程中，可以更好地理解处理器、操作系统、编程语言等的设计思想。结合调试器实现还可以了解、验证某些语言特性的设计实现。
+Debugging standards come in various formats. In the process of understanding debugging information standards, we can better understand the design philosophy of processors, operating systems, programming languages, etc. Combined with debugger implementation, we can also understand and verify the design implementation of certain language features.
 
-调试需要与操作系统交互来实现，调试给了一个更加直接、快速的途径让我们一窥操作系统的工作原理，如任务调度、信号处理、虚拟内存管理等。操作系统离我们那么近但是在认识上离我们又那么远，调试器依赖操作系统支持，也是个加深对操作系统认识的很好的契机。
+Debugging requires interaction with the operating system. Debugging provides a more direct and faster way for us to peek into the working principles of the operating system, such as task scheduling, signal handling, virtual memory management, etc. The operating system is so close to us but conceptually so far away. Debuggers rely on operating system support, which is also a great opportunity to deepen our understanding of the operating system.
 
-此外，调试器是开发常用工具，本书除剖析调试器常用功能的设计实现、调试技巧，也能带读者领略调试信息标准的高屋建瓴的设计思想，站在巨人的肩膀上体验标准的美的一面。
+Additionally, debuggers are commonly used development tools. This book not only analyzes the design implementation of common debugger features and debugging techniques but also allows readers to experience the lofty design philosophy of debugging information standards, experiencing the beauty of standards while standing on the shoulders of giants.
 
-当然在业界已经有针对go语言的调试器了，如gdb、dlv等等，我们从头再开发一款调试器的初衷并非只是为了新而新，而是希望以调试器为切入点，将相关知识进行融会贯通，这里的技术点涉及go语言本身（类型系统、协程调度）、编译器与调试器的协作（DWARF）、操作系统内核（虚拟内存、任务调度、系统调用、指令patch）以及处理器相关指令等等。
+Of course, there are already debuggers for Go in the industry, such as gdb, dlv, etc. Our intention in developing another debugger from scratch is not just to be new for the sake of being new, but to use the debugger as an entry point to integrate related knowledge. The technical points here involve Go language itself (type system, goroutine scheduling), compiler and debugger collaboration (DWARF), operating system kernel (virtual memory, task scheduling, system calls, instruction patching), and processor-related instructions, etc.
 
-简言之，从开发一个go语言调试器作为入口切入，初学者不仅可以从实际工程中学习上手go语言开发，也能在循序渐进、拔高过程中慢慢体会操作系统、编译器、链接器、调试器、处理器之间的协作过程，从而加深对计算机系统全局的认识。
+In short, by using the development of a Go language debugger as an entry point, beginners can not only learn Go language development from practical engineering but also gradually understand the collaborative process between operating systems, compilers, linkers, debuggers, and processors during the progressive and advanced process, thereby deepening their understanding of the computer system as a whole.
 
-## 1.4 示例代码
+## 1.4 Example Code
 
-本书对应的示例代码，您可以通过以下两种方式获得：
+The example code for this book can be obtained in two ways:
 
-1. [**golang-debugger-lessons**](https://github.com/hitzhangjie/golang-debugger-lessons)，读者可以按照章节对应关系来查看示例代码，目录 [**/0-godbg**](https://github.com/hitzhangjie/golang-debugger-lessons) 中提供了一个相对完整的go语言符号级调试器实现。
-2. [**godbg**](https://github.com/hitzhangjie/godbg)，迁移自上述配套示例代码中的/0-godbg，读者如果希望快速体验完整功能，也可以直接体验该项目或查看源码；
+1. [**golang-debugger-lessons**](https://github.com/hitzhangjie/golang-debugger-lessons), readers can view the example code according to the chapter correspondence. The directory [**/0-godbg**](https://github.com/hitzhangjie/golang-debugger-lessons) provides a relatively complete implementation of a Go language symbol-level debugger.
+2. [**godbg**](https://github.com/hitzhangjie/godbg), migrated from the /0-godbg in the above supporting example code. Readers who want to quickly experience the complete functionality can also directly experience this project or view the source code;
 
-   > ps: 项目中提供了vscode的devcontainer配置，采用的是centos+go1.13。如果您升级go版本则可能导致程序出现问题，比如go1.14引入抢占问题，意味着调试器必须解决抢占问题，这可能导致调试器工作不符合预期。
+   > ps: The project provides vscode's devcontainer configuration, using centos+go1.13. If you upgrade the Go version, it may cause program issues, such as the preemption problem introduced in go1.14, which means the debugger must solve the preemption problem, which may cause the debugger to work unexpectedly.
    >
-   > 另外，如果您使用其他版本，书中内容描述可能与真实情况有差异，比如go1.13编译后会将DWARF信息写入.zdebug_ sections，但是go1.19则会将不会写入.zdebug_ sections（写入的事.debug_ sections）。
+   > Also, if you use other versions, the book's content description may differ from the actual situation. For example, go1.13 will write DWARF information to .zdebug_ sections after compilation, but go1.19 will not write to .zdebug_ sections (it writes to .debug_ sections).
    >
-   > 强烈建议您先试用提供的开发容器进行测试、学习，当您掌握了一些基础之后，再按需升级go版本不迟。
-   >
-3. [**hitzhangjie/delve**](https://github.com/hitzhangjie/tinydbg)，该项目由go-delve/delve裁剪而来，为了方便讲述与符号级调试器最核心的部分，项目中剔除了与linux/amd64无关的一些扩展实现。本书有关符号级调试器实现部分会借鉴此项目中的代码。
+   > It is strongly recommended that you first test and learn using the provided development container. When you have mastered some basics, you can upgrade the Go version as needed.
+3. [**hitzhangjie/delve**](https://github.com/hitzhangjie/tinydbg), this project is derived from go-delve/delve. To facilitate the discussion of the most core parts of the symbol-level debugger, the project has removed some extended implementations unrelated to linux/amd64. The symbol-level debugger implementation part of this book will reference code from this project.
 
-## 1.5 联系方式
+## 1.5 Contact Information
 
-如果您有任何建议，请提[Issues](https://github.com/hitzhangjie/golang-debugger-book/issues)，或邮件联系 `hit.zhangjie@gmail.com`，标题中注明来意 `GoDebugger交流`。
+If you have any suggestions, please submit [Issues](https://github.com/hitzhangjie/golang-debugger-book/issues), or email `hit.zhangjie@gmail.com` with the subject line `GoDebugger Discussion`.
 
-希望该书及相关示例，能顺利完成，也算是我磨练心性、自我提高的一种方式，如果能对大家确实起到帮助的作用那是再好不过了。
+I hope this book and related examples can be completed successfully, which will be a way for me to temper my character and improve myself. If it can truly help everyone, that would be even better.
 
-如果喜欢本书，别忘了 [Star](https://github.com/hitzhangjie/golang-debugger-book) 一下对作者予以支持 :)
+If you like this book, don't forget to [Star](https://github.com/hitzhangjie/golang-debugger-book) to support the author :)
