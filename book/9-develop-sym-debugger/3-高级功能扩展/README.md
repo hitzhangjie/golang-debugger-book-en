@@ -1,18 +1,18 @@
-## 高级功能扩展
+## Advanced Feature Extensions
 
-在前面的章节中，我们详细介绍了调试器的核心功能设计与实现，包括进程控制、断点管理、调用栈分析等基础特性。这些功能构成了一个调试器的核心框架。
+In previous chapters, we covered in detail the core functionality design and implementation of the debugger, including process control, breakpoint management, call stack analysis and other basic features. These functions form the core framework of a debugger.
 
-然而，要打造一个真正实用的调试器，仅有这些基础功能是不够的。还有许多细节特性和扩展功能，虽然不是必需的，但能大大提升调试器的易用性和实用价值。这些功能包括:
+However, to build a truly practical debugger, these basic functions alone are not enough. There are many detailed features and extensions that, while not essential, can greatly enhance the debugger's usability and practical value. These features include:
 
-- 集成脚本引擎(starlark)，支持用户编写自动化调试脚本
-- 基于eBPF的轻量级跟踪功能，实现低开销的程序行为分析
-- 语法高亮显示，提升源码阅读体验
-- 分页输出支持，优化大量调试信息的展示
-- 读取分离存储的调试信息，支持stripped二进制的调试
-- 自动推测源码路径映射，简化源码定位配置
-- 目标进程IO重定向，灵活控制程序输入输出
+- Integration of scripting engine (starlark) to support user-written automated debugging scripts
+- Lightweight tracing functionality based on eBPF for low-overhead program behavior analysis  
+- Syntax highlighting to improve source code reading experience
+- Paged output support to optimize display of large amounts of debug information
+- Reading separately stored debug information to support debugging of stripped binaries
+- Automatic source path mapping inference to simplify source location configuration
+- Target process I/O redirection for flexible control of program input/output
 - ...
 
-这一章节，我们将深入介绍这些扩展功能的实现原理和具体细节。这些内容将帮助你打造一个更加完善和易用的调试工具。
+In this chapter, we will dive deep into the implementation principles and specific details of these extended features. This content will help you build a more complete and user-friendly debugging tool.
 
-让我们开始探索这些有趣且实用的扩展特性。
+Let's begin exploring these interesting and practical extensions.

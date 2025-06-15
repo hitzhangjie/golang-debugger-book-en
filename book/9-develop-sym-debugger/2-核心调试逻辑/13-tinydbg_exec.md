@@ -1,10 +1,10 @@
 ## Exec
 
-### 实现目标: `tinydbg exec ./prog`
+### Implementation Goal: `tinydbg exec ./prog`
 
-本节介绍exec这个启动调试的命令：`tinydbg exec [executable] [flags]`，exec操作将执行executable对自动attach住对应的进程。在第6章介绍指令级调试器时，我们有演示如何通过exec.Command来指定要启动的程序、启动该程序以及如何在程序启动后自动被ptracer跟踪。如果忘记了这部分内容，可以回去看看6.1, 6.2, 6.3这几个小节。
+This section introduces the exec command for starting debugging: `tinydbg exec [executable] [flags]`. The exec operation will execute the executable and automatically attach to the corresponding process. In Chapter 6 where we introduced instruction-level debugging, we demonstrated how to specify the program to launch using exec.Command, how to start the program, and how to automatically trace it with ptrace after launch. If you've forgotten this part, you can review sections 6.1, 6.2, and 6.3.
 
-demo tinydbg中的exec命令其实又是老调重弹，只不过这里tinydbg是前后端分离式架构，如果只考虑后端的target层对tracee的启动、控制部分，在需要注意的要点上是一样的。
+The exec command in demo tinydbg is essentially revisiting familiar territory, except that tinydbg uses a frontend-backend separated architecture. If we only consider the target layer's control of the tracee in the backend, the key points to note are the same.
 
 ```bash
 $ tinydbg help exec
@@ -38,17 +38,17 @@ Global Flags:
       --wd string                        Working directory for running the program.
 ```
 
-exec操作的选项相比attach操作增加了一个 `--disable-aslr` ，我们只介绍下这个选项，其他选项我们介绍attach操作时都介绍过了，不重复描述。OK，第6章指令级调试器部分我们介绍过ASLR。这个特性大家一般很少会去用到，所以我们再提一下。
+Compared to the attach operation, the exec operation adds a `--disable-aslr` option. We'll only introduce this option here, as other options were covered when discussing the attach operation. OK, we introduced ASLR in Chapter 6 on instruction-level debugging. This feature is rarely used, so let's mention it again.
 
-ASLR是一种操作系统级别的安全技术，主要作用是通过随机化程序在内存中的加载位置来增加攻击者预测目标地址、利用软件漏洞进行恶意操作的难度。其核心机制包括动态随机分配进程地址空间中各个部分的位置，例如executable基址、库文件、堆和栈等。Linux内核默认开启了完整的地址随机化，但是对于executale地址随机化必须要开启PIE编译模式。这虽然带来了一定安全性，但是如果你想做一些自动化调试的任务，而这些任务中使用指令地址进行了某些操作，那么ASLR可能会让调试失败。
+ASLR is an operating system-level security technology that primarily works by randomizing the memory loading positions of programs to increase the difficulty for attackers to predict target addresses and exploit software vulnerabilities. Its core mechanism includes dynamically randomizing the positions of various parts in the process address space, such as executable base addresses, library files, heap, and stack. The Linux kernel enables full address randomization by default, but for executable address randomization, PIE compilation mode must be enabled. While this brings certain security benefits, if you want to perform automated debugging tasks that use instruction addresses for certain operations, ASLR might cause debugging to fail.
 
-所以这里增加了一个选项 `--disable-aslr`，这个选项会禁用上述提及的所有地址空间随机化能力。
+Therefore, an option `--disable-aslr` is added here, which will disable all the address space randomization capabilities mentioned above.
 
-### 基础知识
+### Basic Knowledge
 
-### 代码实现
+### Code Implementation
 
-主要代码执行路径如下：
+The main code execution path is as follows:
 
 ```bash
 main.go:main.main
@@ -58,16 +58,16 @@ main.go:main.main
                             \--> server := rpccommon.NewServer(...)
                             \--> server.Run()
                                     \--> debugger, _ := debugger.New(...)
-                                            if attach 启动方式: debugger.Attach(...)
-                                            elif core 启动方式：core.OpenCore(...)
-                                            else 其他 debuger.Launch(...)
+                                            if attach startup: debugger.Attach(...)
+                                            elif core startup: core.OpenCore(...)
+                                            else others debuger.Launch(...)
                                     \--> c, _ := listener.Accept() 
                                     \--> serveConnection(conn)
 ```
 
-由于调试器后端初始化的逻辑我们之前都已经介绍过了，包括网络通信的初始化、debugger的初始化，这里我们直接看最核心的代码就好了。
+Since we've already covered the debugger backend initialization logic, including network communication initialization and debugger initialization, we'll focus directly on the core code here.
 
-对于exec启动方式的话，我们直接看debugger.Launch(...)的实现：
+For the exec startup method, let's look at the implementation of debugger.Launch(...):
 
 ```go
 // Launch will start a process with the given args and working directory.
@@ -86,7 +86,7 @@ func (d *Debugger) Launch(processArgs []string, wd string) (*proc.TargetGroup, e
 func Launch(cmd []string, wd string, flags proc.LaunchFlags, tty string, stdinPath string, stdoutOR proc.OutputRedirect, stderrOR proc.OutputRedirect) (*proc.TargetGroup, error) {
     ...
 
-    // 输入输出重定向设置
+    // Input/output redirection setup
 	stdin, stdout, stderr, closefn, err := openRedirects(stdinPath, stdoutOR, stderrOR, foreground)
 	if err != nil {
 		return nil, err
@@ -96,8 +96,8 @@ func Launch(cmd []string, wd string, flags proc.LaunchFlags, tty string, stdinPa
 	dbp := newProcess(0)
     ...
 	dbp.execPtraceFunc(func() {
-        // 通过personality系统调用，禁用地址空间随机化 (只影响当前进程及其子进程）
-        // 然后再启动我们的待调试程序，此时该程序就是禁用地址空间随机化的
+        // Use personality system call to disable address space randomization (only affects current process and its children)
+        // Then start our program to be debugged, which will now have address space randomization disabled
 		if flags&proc.LaunchDisableASLR != 0 {
 			oldPersonality, _, err := syscall.Syscall(sys.SYS_PERSONALITY, personalityGetPersonality, 0, 0)
 			if err == syscall.Errno(0) {
@@ -107,14 +107,14 @@ func Launch(cmd []string, wd string, flags proc.LaunchFlags, tty string, stdinPa
 			}
 		}
 
-        // 启动待调试程序，此时该进程是被禁用了地址空间随机化的
+        // Start the program to be debugged, which now has address space randomization disabled
 		process = exec.Command(cmd[0])
 		process.Args = cmd
 		process.Stdin = stdin
 		process.Stdout = stdout
 		process.Stderr = stderr
 		process.SysProcAttr = &syscall.SysProcAttr{
-            // Ptrace=true，go标准库中，子进程中会调用PTRACEME
+            // Ptrace=true, in the Go standard library, PTRACEME will be called in the child process
 			Ptrace:     true, 
 			Setpgid:    true,
 			Foreground: foreground,
@@ -123,12 +123,12 @@ func Launch(cmd []string, wd string, flags proc.LaunchFlags, tty string, stdinPa
 		err = process.Start()
 	})
 
-    // 等待tracee启动完成
+    // Wait for tracee to start
 	dbp.pid = process.Process.Pid
 	dbp.childProcess = true
 	_, _, err = dbp.wait(process.Process.Pid, 0)
 
-    // 进一步初始化，包括将tracee下的所有已有线程、未来可能创建的线程都纳入管控
+    // Further initialization, including bringing all existing threads and future threads under control
 	tgt, err := dbp.initialize(cmd[0])
 	if err != nil {
 		return nil, err
@@ -151,14 +151,14 @@ func forkAndExecInChild1(...) {
     ...
 ```
 
-这样exec操作，调试器后端的目标层逻辑就执行完成了。前后端网络IO初始化也完成之后，前端就可以通过调试会话发送调试命令了。
+This completes the target layer logic of the exec operation in the debugger backend. After the frontend-backend network I/O initialization is complete, the frontend can send debugging commands through the debugging session.
 
-### 执行测试
+### Testing
 
-略
+Omitted
 
-### 本文总结
+### Summary
 
-本文介绍了tinydbg exec命令的实现细节。exec命令用于启动一个新进程并对其进行调试，主要通过设置进程的SysProcAttr.Ptrace=true来实现。当新进程启动时，go运行时会自动调用PTRACE_TRACEME使子进程进入被跟踪状态。调试器等待子进程启动完成后，会将其所有线程纳入管控。这样就完成了exec操作的目标层逻辑，为后续的调试会话做好了准备。
+This article introduced the implementation details of the tinydbg exec command. The exec command is used to start a new process and debug it, mainly implemented by setting the process's SysProcAttr.Ptrace=true. When the new process starts, the Go runtime automatically calls PTRACE_TRACEME to put the child process into a traced state. The debugger waits for the child process to start, then brings all its threads under control. This completes the target layer logic of the exec operation, preparing for subsequent debugging sessions.
 
-另外我们也重新回顾了下ASLR的作用，以及对调试器调试的影响，介绍了下 `--disable-aslr` 的方法。
+We also reviewed the role of ASLR and its impact on debugging, and introduced the method of using `--disable-aslr`.

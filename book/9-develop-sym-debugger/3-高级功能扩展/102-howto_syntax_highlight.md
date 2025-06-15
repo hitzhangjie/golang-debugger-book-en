@@ -1,26 +1,26 @@
-## 语法高亮
+## Syntax Highlighting
 
-软件开发过程中对源代码进行语法高亮是非常有必要的，通过这种方式可以将程序中不同的要素进行有效地区分，如关键字、保留字、标识符、括号匹配、注释、字符串等等。开发人员使用的IDE一般都支持语法高亮，在vscode中通过gopls机制可以识别每个token所属的类别以及配合颜色主题便可以实现语法高亮，像vim、sublime等的编辑器也可以通过插件对不同编程语言的源代码进行语法高亮支持。
+Syntax highlighting of source code is essential in software development, as it effectively distinguishes different program elements such as keywords, reserved words, identifiers, bracket matching, comments, strings, and more. IDEs used by developers generally support syntax highlighting - in VSCode, the gopls mechanism can identify the category of each token and, combined with color themes, implement syntax highlighting. Editors like Vim and Sublime can also support syntax highlighting for different programming languages through plugins.
 
-在我们使用调试器进行调试时，也经常需要查看源码，比如：1）使用list命令主动查看源码，`list main.main` or `list main.go:20` 以方便查看查看源码，或进一步确定要添加下个断点的位置；2）在逐语句 `next` 、逐指令知识 `step` 时，我们还希望展示当前已经执行到的源码位置、指令位置；3）在跟踪调用栈 `bt` 时，希望展示当前的函数调用栈 …… 这些时候如果能够对特定的源码位置的函数调用、语句、表达式、操作数、运算符、变量名、类型名等进行语法高亮显示，无疑会让可读性更好一点。
+When using debuggers, we often need to examine source code, for example: 1) Using the list command to actively view source code, `list main.main` or `list main.go:20` to conveniently view code or further determine where to add the next breakpoint; 2) When stepping through statements with `next` or instructions with `step`, we want to show the current source code and instruction positions; 3) When tracing the call stack with `bt`, we want to display the current function call stack... In these cases, if we can syntax highlight specific source code locations including function calls, statements, expressions, operands, operators, variable names, and type names, it will undoubtedly improve readability.
 
-这个小节我们就来介绍下如何做到这点。
+In this section, we'll introduce how to achieve this.
 
-### 如何实现
+### How to Implement
 
-要实现语法高亮，需要做哪些工作呢？如果学习过编译原理，其实应该很容易想到，我们只需要实现一个词法分析器能够提取程序中的token序列，并通过语法分析器进行分析识别这些token具体为何物、它们之间具体是什么联系，是构成一个函数，还是构成一个表达式，还是简单到定义了一个变量、一个分支控制语句，等等。只要识别出来了，将这些不同的程序构造进行高亮显示自然不再困难。
+What work needs to be done to implement syntax highlighting? If you've studied compiler principles, it should be easy to realize that we just need to implement a lexical analyzer to extract token sequences from the program, and use a syntax analyzer to analyze and identify what these tokens are and how they relate to each other - whether they form a function, an expression, or something as simple as defining a variable or a control flow statement. Once we can identify these elements, highlighting these different program constructs becomes straightforward.
 
-### 动手实践
+### Hands-on Practice
 
-我们就以go语言为例，来具体讨论下如何对源码进行高亮显示。自然我们不希望重新实现一遍词法分析器、语法分析器之类的琐碎工作，我们也没有精力去重新实现一遍这类工作。尽管flex、yacc可以帮助我们简化这类工作，但是go标准库其实已经提供了package ast来帮助我们做一些语法分析相关的工作。本文我们就基于package ast来演示下如何对go源码进行语法高亮。
+Let's take Go language as an example to discuss how to implement source code highlighting. Naturally, we don't want to reimplement tedious work like lexical analyzers and syntax analyzers, and we don't have the energy to redo this kind of work. Although flex and yacc can help simplify these tasks, Go's standard library already provides package ast to help us with syntax analysis related work. In this article, we'll demonstrate how to syntax highlight Go source code using package ast.
 
-设计一个package colorize来提供一个colorize.Print(...)方法，来将指定的源码文件进行高亮展示，并且允许指定源文件的行号范围、io.Writer、高亮颜色风格。只用编写如下几个源文件即可：
+We'll design a package colorize that provides a colorize.Print(...) method to highlight specified source code files, allowing specification of line number ranges, io.Writer, and highlighting color styles. We only need to write the following source files:
 
-- line_writer.go，负责按行输出，输出的时候允许指定token、高亮颜色风格，token包含了起始位置信息，所以配合颜色，即可完成对特定关键字、标识符、注释等不同程序构造的高亮显示；
-- colorize.go，负责读取源文件并对其进行AST分析，将其中我们要高亮的一些程序构造提取出来，如关键字package、var、func等作为token提取出来，并构造一个colorTok（包含了token本身位置信息、属于哪一类别，这里的类别决定了最终的颜色风格）；
-- style.go，即高亮显示风格，不同类别对应着不同的终端颜色；
+- line_writer.go: Responsible for line-by-line output, allowing specification of tokens and highlighting color styles. Since tokens contain position information, combined with colors, it can highlight different program constructs like specific keywords, identifiers, comments, etc.
+- colorize.go: Responsible for reading source files and performing AST analysis to extract program constructs we want to highlight, such as keywords like package, var, func as tokens, and constructing colorTok (containing token position information and category, where category determines the final color style)
+- style.go: The highlighting display style, mapping different categories to different terminal colors
 
-下面就是具体的源码实现了，其实这里的源码源自go-delve/delve，我在编写debugger101相关的demo时发现了go-delve/delve中存在的bug，并对其进行了修复，这里也算是简单记录分享一下吧。同学们真正有机会去尝试这个的也不多。
+Below is the specific source code implementation. Actually, this code comes from go-delve/delve. When writing debugger101 related demos, I found and fixed a bug in go-delve/delve, so I'm sharing this here as a simple record. Not many students get the chance to try this.
 
 #### file: colorize.go
 
@@ -347,9 +347,9 @@ func (w *lineWriter) Write(style Style, data []byte, last bool) {
 }
 ```
 
-### 运行测试
+### Running Tests
 
-下面是测试文件，我们定义了一个表示源码内容的字符串，并通过gomonkey mock掉了ioutil.ReadFile(...)的操作让其返回定义的源码字符串，然后执行colorize.Print(...)对其进行高亮显示。
+Below is the test file. We define a string representing the source code content, and use gomonkey to mock the ioutil.ReadFile(...) operation to return our defined source code string. Then we execute colorize.Print(...) to highlight it.
 
 file: colorize_test.go
 
@@ -440,19 +440,19 @@ func TestPrint(t *testing.T) {
 
 ```
 
-现在运行这个测试用例 `go test -run TestPrint`，程序运行结果如下：
+Now when running this test case `go test -run TestPrint`, the program output is as follows:
 
 <img alt="highlight" src="https://www.hitzhangjie.pro/blog/assets/2022-02-09-%E5%A6%82%E4%BD%95%E5%AE%9E%E7%8E%B0%E6%BA%90%E4%BB%A3%E7%A0%81%E8%AF%AD%E6%B3%95%E9%AB%98%E4%BA%AE/highlight.png" class="myimg"/>
 
-我们看到程序中的部分程序元素被高亮显示了，当然我们只识别了简单的一小部分，关键字、字符串、注释，实际IDE中会分析的更加的细致，大家在使用IDE的时候应该也都有这方面的体会。
+We can see that some program elements have been highlighted. Of course, we only identified a small subset of elements like keywords, strings, and comments. In practice, IDEs analyze code much more thoroughly, as you've probably experienced when using IDEs.
 
-### 本文小结
+### Article Summary
 
-本文简单总结了如何基于go ast对源代码进行语法分析并进行高亮显示，希望读者能了解到这里的知识点，并能认识到编译原理的相关知识真的是可以用来做些有价值、有意思的东西的。再比如，我们实现一些linters对源码进行检查（如golangci-linter），作者之前还写过一篇文章是讲述如何对go程序进行可视化，有些IDE还支持自动生成classgram、callgraph等等，这些也是对go ast的另一种应用。
+This article briefly summarized how to perform syntax analysis and highlighting of source code based on Go's AST package. We hope readers can understand the key points covered here and recognize that compiler theory knowledge can be used to create valuable and interesting tools. For example, we can implement linters to check source code (like golangci-linter). The author previously wrote another article about visualizing Go programs - some IDEs also support automatically generating classdiagrams, callgraphs, etc., which are other applications of Go AST analysis.
 
-新的一年与大家共勉，做有追求的工程师，知其然知其所以然 :)
+In the new year, let's strive together to be engineers who pursue deeper understanding, knowing both what and why :)
 
-### 参考文献
+### References
 
-1. [如何实现源代码语法高亮](https://www.hitzhangjie.pro/blog/2022-02-09-%E5%A6%82%E4%BD%95%E5%AE%9E%E7%8E%B0%E6%BA%90%E4%BB%A3%E7%A0%81%E8%AF%AD%E6%B3%95%E9%AB%98%E4%BA%AE/)
-2. [语法高亮实现pkg/colorize](https://github.com/go-delve/delve/tree/master/pkg/terminal/colorize)
+1. [How to Implement Source Code Syntax Highlighting](https://www.hitzhangjie.pro/blog/2022-02-09-%E5%A6%82%E4%BD%95%E5%AE%9E%E7%8E%B0%E6%BA%90%E4%BB%A3%E7%A0%81%E8%AF%AD%E6%B3%95%E9%AB%98%E4%BA%AE/)
+2. [Syntax Highlighting Implementation pkg/colorize](https://github.com/go-delve/delve/tree/master/pkg/terminal/colorize)

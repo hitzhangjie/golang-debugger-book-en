@@ -1,14 +1,14 @@
-## Core (Part1): ELF核心转储文件剖析
+## Core (Part1): ELF Core Dump File Analysis
 
-可执行与可链接格式(ELF) 🧝 用于编译输出(`.o`文件)、可执行文件、共享库和核心转储文件。前几种用途在[System V ABI规范](http://www.sco.com/developers/devspecs/gabi41.pdf)和[工具接口标准(TIS) ELF规范](http://refspecs.linuxbase.org/elf/elf.pdf)中都有详细说明，但关于ELF格式在核心转储中的使用似乎没有太多文档。
+The Executable and Linkable Format (ELF) 🧝 is used for compiled output (`.o` files), executables, shared libraries, and core dump files. The first few uses are well documented in the [System V ABI specification](http://www.sco.com/developers/devspecs/gabi41.pdf) and [Tool Interface Standard (TIS) ELF specification](http://refspecs.linuxbase.org/elf/elf.pdf), but there seems to be less documentation about the use of ELF format in core dumps.
 
-我们接下来要介绍 `tinydbg core [executable] [corefile]` 对core文件进行调试，在这之前我们必须先了解下Core文件的事实上的规范，要记录些什么，按什么格式记录，如何兼容不同的调试器。理解了Core文件内容如何生成，也就理解了调试器读取Core文件时应该如何读取，才能重建问题现场。
+Before we introduce `tinydbg core [executable] [corefile]` for debugging core files, we must first understand the de facto specification of Core files - what to record, in what format, and how to be compatible with different debuggers. Understanding how Core file content is generated also helps us understand how debuggers should read Core files to reconstruct the problem scene.
 
-这篇文章 [Anatomy of an ELF core file](https://www.gabriel.urdhr.fr/2015/05/29/core-file/) 中对Core文件的事实上的规范进行了梳理、总结，以下是摘录在这篇文章中的一些关于Core文件的说明。
+This article [Anatomy of an ELF core file](https://www.gabriel.urdhr.fr/2015/05/29/core-file/) summarizes the de facto specification of Core files. Here are some excerpts about Core files from this article.
 
-ps: 本小节已经假定您已经阅读并理解了ELF文件的构成，这部分内容我们在第7章进行了介绍。另外，如果您想速览ELF文件相关内容给，也可以参考这篇文章 [knowledge about ELF files](https://www.gabriel.urdhr.fr/2015/09/28/elf-file-format/)，介绍也非常详实。
+ps: This section assumes you have read and understood the composition of ELF files, which we introduced in Chapter 7. Additionally, if you want to quickly review ELF file content, you can also refer to this article [knowledge about ELF files](https://www.gabriel.urdhr.fr/2015/09/28/elf-file-format/), which provides a very detailed introduction.
 
-OK，我们先创建一个core dump文件作为示例，方便结合着来介绍。
+OK, let's first create a core dump file as an example to help with our explanation.
 
 ```bash
     pid=$(pgrep xchat)
@@ -18,7 +18,7 @@ OK，我们先创建一个core dump文件作为示例，方便结合着来介绍
 
 ### ELF header
 
-Core文件中ELF头部没有什么特别之处。`e_type=ET_CORE` 标记表明这是一个core文件：
+The ELF header in Core files is not particularly special. `e_type=ET_CORE` marks this as a core file:
 
 ```bash
     ELF Header:
@@ -45,7 +45,7 @@ Core文件中ELF头部没有什么特别之处。`e_type=ET_CORE` 标记表明�
 
 ### Program headers
 
-Core文件中的段头表和可执行程序中的段头表，在某些字段含义上是有变化的，接下来会介绍。
+The program header table in Core files has some differences in field meanings compared to executable programs, which we'll explain next.
 
 ```bash
     Program Headers:
@@ -94,18 +94,18 @@ Core文件中的段头表和可执行程序中的段头表，在某些字段含�
     [...]
 ```
 
-程序头中的`PT_LOAD`条目描述了进程的虚拟内存区域(VMAs):
+The `PT_LOAD` entries in the program header describe the process's virtual memory areas (VMAs):
 
-* `VirtAddr` 是VMA的起始虚拟地址；
-* `MemSiz` 是VMA在虚拟地址空间中的大小；
-* `Flags` 是这个VMA的权限(读、写、执行)；
-* `Offset` 是对应数据在core dump文件中的偏移量。这 **不是** 在原始映射文件中的偏移量。
-* `FileSiz` 是在这个core文件中对应数据的大小。与源文件内容相同的 “**只读文件**” 映射VMA不会在core文件中重复。它们的`FileSiz`为0,我们需要查看原始文件才能获得内容；
-* Non-Anonymous VMA关联的文件的名称和在该文件中的偏移量不在这里描述,而是在`PT_NOTE`段中描述(其内容将在后面介绍)。
+* `VirtAddr` is the starting virtual address of the VMA;
+* `MemSiz` is the size of the VMA in virtual address space;
+* `Flags` are the permissions (read, write, execute) for this VMA;
+* `Offset` is the offset of the corresponding data in the core dump file. This is **not** the offset in the original mapped file.
+* `FileSiz` is the size of the corresponding data in this core file. VMA mappings of "**read-only files**" that are identical to the source file content are not duplicated in the core file. Their `FileSiz` is 0, and we need to look at the original file to get the content;
+* The names of files associated with Non-Anonymous VMAs and their offsets in those files are not described here, but in the `PT_NOTE` segment (whose content will be introduced later).
 
-由于这些是VMAs (vm_area)，它们都按页边界对齐。
+Since these are VMAs (vm_area), they are all aligned to page boundaries.
 
-我们可以用 `cat /proc/$pid/maps` 进行比较，会发现相同的信息:
+We can compare with `cat /proc/$pid/maps` and find the same information:
 
 ```bash
     00400000-0049d000 r-xp 00000000 08:11 789936          /usr/bin/xchat
@@ -127,13 +127,13 @@ Core文件中的段头表和可执行程序中的段头表，在某些字段含�
     [...]
 ```
 
-core dump中的前三个 `PT_LOAD` 条目映射到`xchat`ELF文件的VMAs:
+The first three `PT_LOAD` entries in the core dump map to the VMAs of the `xchat` ELF file:
 
-* `00400000-0049d000`, 对应只读可执行段的VMA;
-* `0069c000-006a0000`, 对应读写段已初始化部分的VMA;
-* `006a0000-006a4000`, 读写段中不在`xchat` ELF文件中的部分(零初始化的`.bss`段)。
+* `00400000-0049d000`, corresponding to the read-only executable segment VMA;
+* `0069c000-006a0000`, corresponding to the read-write segment initialized part VMA;
+* `006a0000-006a4000`, the part of the read-write segment not in the `xchat` ELF file (zero-initialized `.bss` segment).
 
-我们可以将其与`xchat`程序的程序头进行比较:
+We can compare this with the program headers of the `xchat` program:
 
 ```bash
     Program Headers:
@@ -171,11 +171,11 @@ core dump中的前三个 `PT_LOAD` 条目映射到`xchat`ELF文件的VMAs:
 
 ### Sections
 
-ELF核心转储文件通常不会包含节头表。Linux内核在生成核心转储文件时不会生成节头表。GDB会生成与程序头表信息相同的节头表:
+ELF core dump files typically don't contain section headers. The Linux kernel doesn't generate section headers when creating core dump files. GDB generates section headers that match the program header information:
 
-* `SHT_NOBITS` 类型的节在核心文件中不存在,但会引用其他已存在文件的部分内容;
-* `SHT_PROGBITS` 类型的节存在于核心文件中;
-* `SHT_NOTE` 类型的节头表映射到`PT_NOTE`程序头表。
+* Sections of type `SHT_NOBITS` don't exist in the core file but reference parts of other existing files;
+* Sections of type `SHT_PROGBITS` exist in the core file;
+* Section headers of type `SHT_NOTE` map to the `PT_NOTE` program header.
 
 ```bash
     Section Headers:
@@ -218,15 +218,15 @@ ELF核心转储文件通常不会包含节头表。Linux内核在生成核心转
       O (extra OS processing required) o (OS specific), p (processor specific
 ```
 
-注意，tinydbg中也不生成这里的节头表，只生成程序头表，因为借鉴相关的实现的时候，也是参考了Linux内核中的部分实现逻辑，而Linux内核生成Core文件时不生成sections。
+Note that tinydbg also doesn't generate section headers here, only program headers, because when implementing related functionality, we also referenced some implementation logic from the Linux kernel, and the Linux kernel doesn't generate sections when creating Core files.
 
 ### Notes
 
-`PT_NOTE` 程序头记录了额外的信息，比如不同线程的CPU寄存器内容、与每个VMA关联的映射的文件等。它由这一系列的 [PT_NOTE entries](http://refspecs.linuxbase.org/elf/elf.pdf#page=42)组成,这些条目是[`ElfW(Nhdr)`](https://github.com/lattera/glibc/blob/895ef79e04a953cac1493863bcae29ad85657ee1/include/link.h#L351)结构(即`Elf32_Nhdr`或`Elf64_Nhdr`):
+The `PT_NOTE` program header records additional information, such as CPU register contents for different threads, mapped files associated with each VMA, etc. It consists of a series of [PT_NOTE entries](http://refspecs.linuxbase.org/elf/elf.pdf#page=42), which are [`ElfW(Nhdr)`](https://github.com/lattera/glibc/blob/895ef79e04a953cac1493863bcae29ad85657ee1/include/link.h#L351) structures (i.e., `Elf32_Nhdr` or `Elf64_Nhdr`):
 
-* 发起者名称;
-* 发起者特定的ID(4字节值);
-* 二进制内容。
+* Originator name;
+* Originator-specific ID (4-byte value);
+* Binary content.
 
 ```bash
     typedef struct elf32_note {
@@ -242,7 +242,7 @@ ELF核心转储文件通常不会包含节头表。Linux内核在生成核心转
     } Elf64_Nhdr;
 ```
 
-这些是notes中的内容:
+These are the contents in the notes:
 
 ```bash
     Displaying notes found at file offset 0x00004b80 with length 0x00009064:
@@ -273,44 +273,44 @@ ELF核心转储文件通常不会包含节头表。Linux内核在生成核心转
       CORE                 0x00006cee       NT_FILE (mapped files)
 ```
 
-大多数数据结构（如`prpsinfo`、`prstatus`等）都定义在C语言头文件中（比如`linux/elfcore.h`）。
+Most data structures (like `prpsinfo`, `prstatus`, etc.) are defined in C header files (such as `linux/elfcore.h`).
 
-#### 通用进程信息
+#### General Process Information
 
-`CORE/NT_PRPSINFO` 条目定义了通用的进程信息,如进程状态、UID、GID、文件名和(部分)参数。
+The `CORE/NT_PRPSINFO` entry defines general process information, such as process state, UID, GID, filename, and (partial) arguments.
 
-`CORE/NT_AUXV` 条目描述了[AUXV辅助向量](https://refspecs.linuxfoundation.org/LSB_1.3.0/IA64/spec/auxiliaryvector.html)。
+The `CORE/NT_AUXV` entry describes the [AUXV auxiliary vector](https://refspecs.linuxfoundation.org/LSB_1.3.0/IA64/spec/auxiliaryvector.html).
 
-#### 线程信息
+#### Thread Information
 
-每个线程都有以下条目:
+Each thread has the following entries:
 
-* `CORE/NT_PRSTATUS` (PID、PPID、通用寄存器内容等);
-* `CORE/NT_FPREGSET` (浮点寄存器内容);
+* `CORE/NT_PRSTATUS` (PID, PPID, general register contents, etc.);
+* `CORE/NT_FPREGSET` (floating point register contents);
 * `CORE/NT_X86_STATE`;
-* `CORE/SIGINFO`。
+* `CORE/SIGINFO`.
 
-对于多线程进程,有两种处理方式:
+For multi-threaded processes, there are two approaches:
 
-* 要么将所有线程信息放在同一个 `PT_NOTE` 中,此时消费者必须猜测每个条目属于哪个线程(实践中,一个 `NT_PRSTATUS` 定义了一个新线程);
-* 要么将每个线程放在单独的 `PT_NOTE` 中。
+* Either put all thread information in the same `PT_NOTE`, where consumers must guess which thread each entry belongs to (in practice, a new thread is defined by an `NT_PRSTATUS`);
+* Or put each thread in a separate `PT_NOTE`.
 
-参见 [LLDB 源代码](https://github.com/llvm-mirror/lldb/blob/f7adf4b988da7bd5e13c99af60b6f030eb1beefe/source/Plugins/Process/elf-core/ProcessElfCore.cpp#L465) 中的说明:
+See the explanation in [LLDB source code](https://github.com/llvm-mirror/lldb/blob/f7adf4b988da7bd5e13c99af60b6f030eb1beefe/source/Plugins/Process/elf-core/ProcessElfCore.cpp#L465):
 
-> 如果一个 core 文件包含多个线程上下文,则有两种数据形式
+> If a core file contains multiple thread contexts, there are two forms of data
 >
-> 1. 每个线程上下文(2个或更多NOTE条目)包含在其自己的段(PT_NOTE)中
-> 2. 所有线程上下文存储在单个段(PT_NOTE)中。这种情况稍微复杂一些,因为在解析时我们必须找到新线程的起始位置。当前实现在找到 NT_PRSTATUS 或 NT_PRPSINFO NOTE 条目时标记新线程的开始。
+> 1. Each thread context (2 or more NOTE entries) is contained in its own segment (PT_NOTE)
+> 2. All thread contexts are stored in a single segment (PT_NOTE). This case is slightly more complex because we must find the start of new threads when parsing. The current implementation marks the start of a new thread when it finds an NT_PRSTATUS or NT_PRPSINFO NOTE entry.
 
-在我们的 `tinydbg> dump [output]` 生成core文件时，是将多线程信息放在一个PT_NOTE中进行处理的。
+In our `tinydbg> dump [output]` when generating core files, we handle multi-thread information in a single PT_NOTE.
 
-#### 文件关联
+#### File Associations
 
-`CORE/NT_FILE` 条目描述了虚拟内存区域(VMA)和文件之间的关联关系。每个非匿名VMA都有一个条目，包含:
+The `CORE/NT_FILE` entry describes the association between virtual memory areas (VMAs) and files. Each non-anonymous VMA has an entry containing:
 
-* VMA在虚拟地址空间中的位置(起始地址、结束地址);
-* VMA在文件中的偏移量(页偏移);
-* 关联的文件名。
+* The VMA's location in virtual address space (start address, end address);
+* The VMA's offset in the file (page offset);
+* The associated filename.
 
 ```bash
         Page size: 1
@@ -354,25 +354,25 @@ ELF核心转储文件通常不会包含节头表。Linux内核在生成核心转
     [...]
 ```
 
-据我所知(从binutils的`readelf`源码中了解到)，`CORE/NT_FILE`条目的格式如下:
+As far as I know (from binutils' `readelf` source code), the format of `CORE/NT_FILE` entries is as follows:
 
-1. NT_FILE这样的映射条目的数量(32位或64位);
-2. pagesize (GDB将其设为1而不是实际页大小,32位或64位);
-3. 每个映射条目的格式:
-  1. 起始地址
-  2. 结束地址
-  3. 文件偏移量
-4. 按顺序排列的每个路径字符串(以null结尾)。
+1. Number of mapping entries like NT_FILE (32-bit or 64-bit);
+2. pagesize (GDB sets this to 1 instead of actual page size, 32-bit or 64-bit);
+3. Format of each mapping entry:
+  1. Start address
+  2. End address
+  3. File offset
+4. Path strings for each entry in sequence (null-terminated).
 
-#### 其他信息
+#### Other Information
 
-自定义的调试工具也可以生成一些定制化的信息，比如可以读取环境变量信息，读取 `/proc/<pid>/cmdline` 读取进程相关的启动参数，执行 `go version -m /proc/<pid>/exe`，记录下其中的go buildid、vcs.branch、vcs.version，以及go编译器版本。将这些信息记录下来，这在拿到core文件进行离线分析时，这些信息也有助于确定找到匹配的构建产物、构建环境、代码版本，也有助于排查问题。
+Custom debugging tools can also generate some customized information, such as reading environment variable information, reading `/proc/<pid>/cmdline` to read process-related startup parameters, executing `go version -m /proc/<pid>/exe` to record the go buildid, vcs.branch, vcs.version, and go compiler version. Recording this information is helpful when analyzing core files offline, as it helps determine matching build artifacts, build environment, and code version, which also aids in troubleshooting.
 
-### 本文小结
+### Summary
 
-本文介绍了Linux系统中core dump文件的大致信息构成，并对core dump生成实践也进行了介绍，比如Linux内核、gdb、lldb调试器的做法，在了解了这些之后，我们可以开始介绍我们的tinydbg的调试会话命令 `tinydbg> dump [output]` 以及对core文件调试命令 `tinydbg core [executable] [core]` 了，继续吧。
+This article introduced the general information structure of core dump files in Linux systems and explained the core dump generation practices of the Linux kernel, gdb, and lldb debuggers. After understanding these, we can begin to introduce our tinydbg's debugging session command `tinydbg> dump [output]` and the core file debugging command `tinydbg core [executable] [core]`. Let's continue.
 
-### 参考文献
+### References
 * [Anatomy of an ELF core file](https://www.gabriel.urdhr.fr/2015/05/29/core-file/)
 * [A brief look into core dumps](https://uhlo.blogspot.com/2012/05/brief-look-into-core-dumps.html)
 * [linux/fs/binfmt_elf.c](https://elixir.bootlin.com/linux/v4.20.17/source/fs/binfmt_elf.c)

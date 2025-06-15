@@ -1,44 +1,45 @@
 ## ListFunctions
 
-### 实现目标
+### Implementation Goals
 
-`ListFunctions`是tinydbg中的一个强大功能,它允许用户列出目标进程中定义的函数列表，也允许按照正则表达式的方式查询满足条件的函数列表。
+`ListFunctions` is a powerful feature in tinydbg that allows users to list functions defined in the target process and query functions matching specific patterns using regular expressions.
 
-`funcs <expr>` 对应的核心逻辑即 ListFunctions，另外调试器命令 `tinydbg trace` 也依赖ListFunctions查找匹配的函数，然后在这些函数位置添加断点。
+The core logic of `funcs <expr>` corresponds to ListFunctions. Additionally, the debugger command `tinydbg trace` also relies on ListFunctions to find matching functions and set breakpoints at these locations.
 
-### 基础知识
+### Basic Knowledge
 
-最主要的原因是获取函数的定义，这部分数据从哪里获取呢？从DWARF数据可以获取到，这个我们很早之前就介绍过了。这个并不困难，甚至支持按正则表达式检索也并不困难。
+The main reason is to obtain function definitions, where does this data come from? We can get it from DWARF data, which we introduced earlier. This is not difficult, and even supporting regular expression search is not challenging.
 
-但是如果要递归地展开某个函数的函数调用图，这个就有点挑战了。联想下之前我们介绍过的 go-ftrace 的函数调用图，你就知道我们这个ListFunctions实现的挑战点在哪里了。
+However, if we want to recursively expand the function call graph of a function, this becomes more challenging. Think back to the function call graph we introduced earlier with go-ftrace, and you'll understand where the challenges lie in our ListFunctions implementation.
 
-分析函数的调用图，大致有两种办法：
-1、分析源码，构建AST，对FuncDecl.Body进行分析，找到所有函数调用类型的Expr，然后进行分析记录 …… 但是依赖源码进行trace这个比较不方便，最好依赖executable就可以搞定；
-2、反汇编机器指令，找到所有的CALL <targetFuncName> 指令调用，找到对应的targetFuncName …… 这个确实构建出函数调用图了，但是如果要获取出入参信息，不好确定；
+There are roughly two ways to analyze function call graphs:
+1. Analyze source code, build AST, analyze FuncDecl.Body to find all function call type Exprs, then analyze and record them... However, relying on source code for tracing is not very convenient, it's better to work with just the executable;
+2. Disassemble machine instructions, find all CALL <targetFuncName> instructions, and find the corresponding targetFuncName... This indeed builds the function call graph, but if we want to get input/output parameter information, it's not easy to determine;
 
-在2）基础上，为了更方便获取出入参，就要在程序启动时读取二进制文件的DWARF调试信息，将所有的函数定义记录下来，比如map[pc]Function，而Function就包含了name、pc、lowpc、highpc、length、dwarfregisters情况，我们已经知道了这个函数名对应的pc，便可以添加断点，当执行到断点处时，便可以执行pc处函数定义信息，比如知道如何获取函数的参数，就可以对应的规则将参数取出来。这样就实现了 `跟踪函数执行->打印函数名->打印函数参数列表+打印函数返回值列表` 的操作。
+Building on approach 2), to more easily obtain input/output parameters, we need to read the DWARF debug information of the binary file when the program starts, record all function definitions, such as map[pc]Function, where Function contains name, pc, lowpc, highpc, length, dwarfregisters information. Since we already know the pc corresponding to this function name, we can add breakpoints. When execution reaches the breakpoint, we can execute the function definition information at that pc, such as knowing how to get function parameters, and extract parameters according to corresponding rules. This achieves the operation of `tracking function execution -> printing function name -> printing function parameter list + printing function return value list`.
 
-### 代码实现
+### Code Implementation
 
-下面一起来这部分的关键代码逻辑。
-#### 请求和响应参数类型
+Let's look at the key code logic for this part.
 
-`ListFunctions` RPC调用接受两个参数:
+#### Request and Response Parameter Types
+
+The `ListFunctions` RPC call accepts two parameters:
 
 ```go
 type ListFunctionsIn struct {
-    Filter      string  // 用于过滤函数名的正则表达式模式
-    FollowCalls int     // 跟踪函数调用的深度(0表示不跟踪)
+    Filter      string  // Regular expression pattern for filtering function names
+    FollowCalls int     // Depth for tracking function calls (0 means no tracking)
 }
 
 type ListFunctionsOut struct {
-    Funcs []string      // 匹配的函数名列表
+    Funcs []string      // List of matching function names
 }
 ```
 
-#### 正则表达式过滤
+#### Regular Expression Filtering
 
-函数名过滤使用正则表达式实现。当提供过滤模式时,它会被编译成正则表达式对象:
+Function name filtering is implemented using regular expressions. When a filter pattern is provided, it is compiled into a regular expression object:
 
 ```go
 regex, err := regexp.Compile(filter)
@@ -47,27 +48,27 @@ if err != nil {
 }
 ```
 
-这允许用户使用以下模式搜索函数:
-- `main.*` - 所有以"main"开头的函数
-- `.*Handler` - 所有以"Handler"结尾的函数
-- `[A-Z].*` - 所有导出的函数
+This allows users to search for functions using patterns like:
+- `main.*` - All functions starting with "main"
+- `.*Handler` - All functions ending with "Handler"
+- `[A-Z].*` - All exported functions
 
-#### 二进制信息读取
+#### Binary Information Reading
 
-函数信息从目标二进制文件的调试信息(DWARF)中读取。这些信息在调试器初始化时加载并存储在`BinaryInfo`结构中。主要组件包括:
+Function information is read from the debug information (DWARF) of the target binary file. This information is loaded during debugger initialization and stored in the `BinaryInfo` structure. Main components include:
 
-- `Functions` 切片,包含二进制文件中的所有函数
-- `Sources` 切片,包含所有源文件
-- DWARF调试信息,用于详细的函数元数据
+- `Functions` slice, containing all functions in the binary file
+- `Sources` slice, containing all source files
+- DWARF debug information, for detailed function metadata
 
-#### 函数信息提取
+#### Function Information Extraction
 
-函数信息在调试器初始化期间从DWARF调试信息中提取。对于每个函数,存储以下信息:
+Function information is extracted from DWARF debug information during debugger initialization. For each function, the following information is stored:
 
 ```go
 type Function struct {
     Name       string
-    Entry, End uint64    // 函数地址范围
+    Entry, End uint64    // Function address range
     offset     dwarf.Offset
     cu         *compileUnit
     trampoline bool
@@ -75,12 +76,11 @@ type Function struct {
 }
 ```
 
-#### 获取函数列表
+#### Getting Function List
 
+#### Function Call Traversal
 
-#### 函数调用遍历
-
-当`FollowCalls`大于0时,调试器会执行函数调用的广度优先遍历。这是在`traverse`函数中实现的:
+When `FollowCalls` is greater than 0, the debugger performs a breadth-first traversal of function calls. This is implemented in the `traverse` function:
 
 ```go
 // Functions returns a list of functions in the target process.
@@ -123,27 +123,27 @@ func traverse(t proc.ValidTargets, f *proc.Function, depth int, followCalls int)
         visited bool
     }
     
-    // 使用map跟踪已访问的函数,避免循环
+    // Use map to track visited functions, avoiding cycles
     TraceMap := make(map[string]TraceFuncptr)
     queue := make([]TraceFuncptr, 0, 40)
     funcs := []string{}
     
-    // 从根函数开始
+    // Start from root function
     rootnode := &TraceFunc{Func: f, Depth: depth, visited: false}
     TraceMap[f.Name] = rootnode
     queue = append(queue, rootnode)
     
-    // BFS遍历
+    // BFS traversal
     for len(queue) > 0 {
         parent := queue[0]
         queue = queue[1:]
         
-        // 如果超过调用深度则跳过
+        // Skip if exceeding call depth
         if parent.Depth > followCalls {
             continue
         }
         
-        // 如果已访问则跳过
+        // Skip if already visited
         if parent.visited {
             continue
         }
@@ -151,23 +151,23 @@ func traverse(t proc.ValidTargets, f *proc.Function, depth int, followCalls int)
         funcs = append(funcs, parent.Func.Name)
         parent.visited = true
         
-        // 反汇编函数以查找调用
+        // Disassemble function to find calls
         text, err := proc.Disassemble(t.Memory(), nil, t.Breakpoints(), t.BinInfo(), f.Entry, f.End)
         if err != nil {
             return nil, err
         }
         
-        // 处理每条指令
+        // Process each instruction
         for _, instr := range text {
             if instr.IsCall() && instr.DestLoc != nil && instr.DestLoc.Fn != nil {
                 cf := instr.DestLoc.Fn
-                // 跳过大多数runtime函数,除了特定的几个
+                // Skip most runtime functions, except specific ones
                 if (strings.HasPrefix(cf.Name, "runtime.") || strings.HasPrefix(cf.Name, "runtime/internal")) &&
                     cf.Name != "runtime.deferreturn" && cf.Name != "runtime.gorecover" && cf.Name != "runtime.gopanic" {
                     continue
                 }
                 
-                // 如果未访问过,将新函数添加到队列
+                // If not visited, add new function to queue
                 if TraceMap[cf.Name] == nil {
                     childnode := &TraceFunc{Func: cf, Depth: parent.Depth + 1, visited: false}
                     TraceMap[cf.Name] = childnode
@@ -180,42 +180,42 @@ func traverse(t proc.ValidTargets, f *proc.Function, depth int, followCalls int)
 }
 ```
 
-遍历算法:
-1. 使用map跟踪已访问的函数，避免重复访问
-2. 使用队列进行广度优先遍历
-3. 对于每个函数:
-   - 反汇编其代码
-   - 查找所有CALL指令
-   - 提取被调用函数的信息
-   - 如果未访问过,将新函数添加到队列
-4. 跳过大多数runtime函数以减少干扰
-5. 遵守最大调用深度参数
+Traversal algorithm:
+1. Use map to track visited functions, avoiding duplicates
+2. Use queue for breadth-first traversal
+3. For each function:
+   - Disassemble its code
+   - Find all CALL instructions
+   - Extract called function information
+   - If not visited, add new function to queue
+4. Skip most runtime functions to reduce noise
+5. Respect maximum call depth parameter
 
-ps: 这里为什么不使用AST呢？查找FuncDecl.Body中的所有函数调用，不也是一种办法，确实也是一种办法。但是通过AST的方式应该效率会很慢，而且由于存在内联，AST中的结构不一定能反映最终编译优化后的指令，比如内联优化。使用AST当我们尝试对某个函数位置进行trace并获取这个函数参数时，可能会出现错误，因为它被内联了，通过BP寄存器+参数偏移量的方式获取的不是真实参数。这里使用CALL指令可以避免上述考虑不周的错误，而且处理效率会更高效。
+ps: Why not use AST here? Finding all function calls in FuncDecl.Body is also a method, and indeed it is one approach. However, the AST approach would likely be less efficient, and due to inlining, the structure in AST may not reflect the final optimized instructions after compilation, such as inlining optimizations. When using AST to trace a function location and get its parameters, errors might occur because it's been inlined, and getting parameters through BP register + parameter offset might not give the real parameters. Using CALL instructions here avoids these oversights and is more efficient.
 
-#### 结果处理
+#### Result Processing
 
-最后一步处理结果:
+Final step in processing results:
 
 ```go
-// 排序并删除重复项
+// Sort and remove duplicates
 sort.Strings(funcs)
 funcs = slices.Compact(funcs)
 ```
 
-这确保返回的函数列表:
-- 按字母顺序排序
-- 没有重复项
-- 只包含匹配过滤模式的函数
+This ensures the returned function list:
+- Is alphabetically sorted
+- Has no duplicates
+- Only contains functions matching the filter pattern
 
-#### 使用场景
+#### Usage Scenarios
 
-`ListFunctions`功能主要用于两个调试器命令:
+The `ListFunctions` feature is mainly used in two debugger commands:
 
-1. `funcs <regexp>` - 列出所有匹配模式的函数
-2. `trace <regexp>` - 在匹配的函数及其被调用函数上设置跟踪点
+1. `funcs <regexp>` - List all functions matching the pattern
+2. `trace <regexp>` - Set trace points on matching functions and their called functions
 
-例如:
+For example:
 ```
 tinydbg> funcs main.*
 main.main
@@ -225,8 +225,8 @@ main.handleRequest
 tinydbg> trace main.*
 ```
 
-trace命令使用`ListFunctions`并将`FollowCalls`设置为大于0,以查找可能被匹配函数调用的所有函数,从而实现全面的函数调用跟踪。 
+The trace command uses `ListFunctions` with `FollowCalls` set greater than 0 to find all functions that might be called by matching functions, thus achieving comprehensive function call tracing.
 
-### 本文总结
+### Summary
 
-本文介绍了ListFunctions的设计实现，它通过正则表达式来对函数名进行过滤，并通过广度优先搜索+反汇编代码并分析CALL指令来查找函数的调用关系。相比使用AST分析，这种方式可以更好地应对内联优化带来的影响，这种方式相比分析源码也更加便利、高效。在tinydbg中ListFunctions主要服务于funcs和trace两个调试命令：1）funcs用于列出匹配模式的函数，2）trace用于在这些函数上设置跟踪点，并获取其参数。本文只讲述了如何ListFunctions，在 `tinydbg trace` 小节我们将进一步介绍如何获取跟踪到的函数的入参列表、返回值列表。
+This article introduced the design and implementation of ListFunctions, which filters function names using regular expressions and finds function call relationships through breadth-first search + disassembling code and analyzing CALL instructions. Compared to using AST analysis, this approach better handles the impact of inlining optimizations, and this method is more convenient and efficient than analyzing source code. In tinydbg, ListFunctions mainly serves two debugger commands: 1) funcs for listing functions matching patterns, and 2) trace for setting trace points on these functions and getting their parameters. This article only covered how to ListFunctions; in the `tinydbg trace` section, we will further introduce how to get the input parameter list and return value list of traced functions.

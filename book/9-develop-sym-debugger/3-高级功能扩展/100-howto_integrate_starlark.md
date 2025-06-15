@@ -1,24 +1,24 @@
-## 扩展阅读：starlark让你的程序更强大
+## Further Reading: Make Your Program More Powerful with Starlark
 
-starlark是一门配置语言，它是从Python语言中衍生出来的，但是比Python更简单、更安全。它最初是由Google开发的，用于Bazel构建系统。starlark保留了Python的基本语法和数据类型，但移除了一些危险的特性，比如循环引用、无限递归等。这使得starlark非常适合作为配置语言或者脚本语言嵌入到其他程序中。
+Starlark is a configuration language derived from Python, but simpler and safer. It was originally developed by Google for the Bazel build system. Starlark retains Python's basic syntax and data types while removing some dangerous features like circular references and infinite recursion. This makes Starlark very suitable as a configuration or scripting language to be embedded in other programs.
 
-starlark的主要特点包括:
+The main features of Starlark include:
 
-1. 简单易学 - 采用Python风格的语法，对于熟悉Python的开发者来说几乎没有学习成本
-2. 确定性 - 相同的输入总是产生相同的输出，没有随机性和副作用
-3. 沙箱隔离 - 不能访问文件系统、网络等外部资源，保证安全性
-4. 可扩展 - 可以方便地将宿主语言(如Go)的函数暴露给starlark使用
-5. 快速执行 - 解释器性能优秀，适合嵌入式使用
+1. Easy to Learn - Uses Python-style syntax, almost no learning curve for developers familiar with Python
+2. Deterministic - Same input always produces same output, no randomness or side effects
+3. Sandbox Isolation - Cannot access filesystem, network or other external resources, ensuring security
+4. Extensible - Easy to expose host language (like Go) functions for use in Starlark
+5. Fast Execution - Excellent interpreter performance, suitable for embedded use
 
-这些特性使得starlark成为一个理想的嵌入式配置/脚本语言。通过将starlark集成到我们的Go程序中，我们可以让用户使用starlark脚本来扩展和自定义程序的功能，同时又能保证安全性和可控性。
+These features make Starlark an ideal embedded configuration/scripting language. By integrating Starlark into our Go programs, we can let users extend and customize program functionality using Starlark scripts, while ensuring security and controllability.
 
-比如在go-delve/delve调试器中，starlark被用来编写自动化调试脚本。用户可以使用starlark脚本来自动执行一系列调试命令，或者根据特定条件触发某些调试操作。这大大增强了调试器的灵活性和可编程性。
+For example, in the go-delve/delve debugger, Starlark is used to write automated debugging scripts. Users can use Starlark scripts to automatically execute a series of debug commands, or trigger certain debugging operations based on specific conditions. This greatly enhances the debugger's flexibility and programmability.
 
-下面我们将通过一个简单的例子来演示如何在Go程序中集成starlark引擎，并实现Go函数与starlark函数的相互调用。
+Below we'll demonstrate through a simple example how to integrate the Starlark engine into a Go program and implement mutual function calls between Go and Starlark.
 
-### 集成starlark引擎到Go程序
+### Integrating the Starlark Engine into Go Programs
 
-首先我们来看一个简单的例子，演示如何将starlark引擎集成到Go程序中。这个例子实现了一个简单的REPL(Read-Eval-Print Loop)环境，允许用户输入starlark代码并立即执行：
+Let's start with a simple example that demonstrates how to integrate the Starlark engine into a Go program. This example implements a basic REPL (Read-Eval-Print Loop) environment that allows users to input Starlark code and execute it immediately:
 
 ```go
 package main
@@ -172,15 +172,15 @@ func printError(err error) {
 
 ```
 
-### starlark直接调用Go函数
+### Calling Go Functions Directly from Starlark
 
-在这个例子中，我们将演示如何让starlark脚本调用Go函数。主要思路是:
+In this example, we'll demonstrate how to call Go functions from Starlark scripts. The main approach is:
 
-1. 定义一个Go函数映射表(GoFuncMap)来注册可供starlark调用的Go函数
-2. 实现一个胶水函数(callGoFunc)作为starlark和Go函数之间的桥梁
-3. 将胶水函数注册到starlark全局环境中，这样starlark代码就可以通过它来调用Go函数
+1. Define a Go function map (GoFuncMap) to register Go functions that can be called from Starlark
+2. Implement a glue function (callGoFunc) to serve as a bridge between Starlark and Go functions
+3. Register the glue function in Starlark's global environment so Starlark code can use it to call Go functions
 
-下面是一个简单的示例，展示如何让starlark调用一个Go的加法函数:
+Here's a simple example showing how to let Starlark call a Go addition function:
 
 ```go
 package main
@@ -301,9 +301,9 @@ func main() {
 
 ```
 
-### 调试器集成 starlark
+### Integrating Starlark into the Debugger
 
-go-delve/delve 中集成了starlark，并使用本文体积的方法来支持了对某些调试器内部函数的调用，比如：
+go-delve/delve integrates Starlark and uses the method described in this article to support calling certain internal debugger functions, such as:
 
 ```go
 //go:generate go run ../../../_scripts/gen-starlark-bindings.go go ./starlark_mapping.go
@@ -319,9 +319,9 @@ const (
 )
 ```
 
-比如有下面的go源程序，我们使用 go-delve/delve 来进行自动化调试：
+For example, let's look at the following Go program and use go-delve/delve for automated debugging:
 
-file: main.go （这里保留行号信息，方便与starlark脚本对应）
+file: main.go (line numbers are preserved here to correspond with the starlark script)
 
 ```go
      1 package main                                                                                                        
@@ -355,70 +355,70 @@ file: main.go （这里保留行号信息，方便与starlark脚本对应）
     29 }
 ```
 
-starlark自动化调试脚本：
+Starlark automated debugging script:
 
 file: debug.star
 
-```
-# 定义一个函数来打印当前作用域的信息
+```starlark
+# Define a function to print current scope information
 def print_scope():
     scope = cur_scope()
     print("Current scope:", scope)
     dlv_command("locals")
 
-# 定义一个函数来设置断点并执行调试命令
+# Define a function to set breakpoints and execute debug commands
 def debug_person():
-    # 打印当前作用域
+    # Print current scope
     print_scope()
     
-    # 打印变量 p 的值
+    # Print value of variable p
     dlv_command("print p")
     
-    # 单步执行
+    # Single step execution
     dlv_command("next")
     
-    # 再次打印作用域
+    # Print scope again
     print_scope()
 
-# 定义一个函数来保存调试信息到文件
+# Define a function to save debug information to file
 def save_debug_info():
-    # 获取当前作用域
+    # Get current scope
     scope = cur_scope()
     
-    # 将调试信息写入文件
+    # Write debug info to file
     debug_info = "Debug session at " + str(time.time()) + "\n"
     debug_info += "Current scope: " + str(scope) + "\n"
     
-    # 保存到文件
+    # Save to file
     write_file("debug_info.txt", debug_info)
 
-# 主函数
+# Main function
 def main():
     print("Starting debug session...")
     
-    # 设置断点
+    # Set breakpoints
     dlv_command("break main.main")
     dlv_command("break main.processPerson")
     
-    # 继续执行到main.main
+    # Continue to main.main
     dlv_command("continue")
     
-    # 继续执行到main.processPerson
+    # Continue to main.processPerson
     dlv_command("continue")
  
-    # 执行调试操作
+    # Execute debug operations
     debug_person()
     
-    # 保存调试信息
+    # Save debug information
     save_debug_info()
     
     print("Debug session completed.")
 
-# 直接调用 main 函数 (source命令会自动调用定义的 `main` 函数)
-#main() 
+# Directly call main function (source command will automatically call the defined 'main' function)
+#main()
 ```
 
-运行调试器 `dlv debug main.go`，调试会话就绪后运行 `source debug.star` 即可。
+Run the debugger with `dlv debug main.go`, and once the debug session is ready, execute `source debug.star`.
 
 ```bash
 $ tinydbg debug main.go
@@ -441,7 +441,7 @@ Breakpoint 2 set at 0x49d40e for main.processPerson() ./main.go:27
     18:         }
 Processing person 0: Alice
 > [Breakpoint 2] main.processPerson() ./main.go:27 (hits goroutine(1):1 total:1) (PC: 0x49d40e)
-    22:                 time.Sleep(time.Second) // 添加一些延迟以便于调试
+    22:                 time.Sleep(time.Second) // Add some delay to help with debugging
     23:                 processPerson(p)
     24:         }
     25: }
@@ -465,12 +465,12 @@ Current scope: api.EvalScope{GoroutineID:-1, Frame:0, DeferredCall:0}
 Debug session completed.
 ```
 
-tinydbg暂时保留了go-delve/delve中的starlark实现，pkg/terminal/starlark.go + pkg/terminal/starlark_test.go 一共300行代码，starbind/ 下有近3000行代码，不过这部分代码是通过脚本自动生成的。由于这部分代码相对来说比较独立，不像ebpf-based tracing那样影响到很多地方，所以我们暂时保留这部分代码。上述测试用的源码、star脚本，您可以在路径 tinydbg/examples/starlark_demo 找到。
+tinydbg currently retains the Starlark implementation from go-delve/delve, with pkg/terminal/starlark.go + pkg/terminal/starlark_test.go containing about 300 lines of code, and starbind/ containing nearly 3000 lines of code, though this part is auto-generated by scripts. Since this code is relatively self-contained and doesn't affect many areas like ebpf-based tracing does, we've decided to keep this code for now. You can find the source code and star scripts used in the above tests in the tinydbg/examples/starlark_demo directory.
 
-### 本文总结
+### Summary
 
-我在学习bazelbuild时了解到starlark这门语言，在学习go-delve/delve时进一步了解了它。如果我们正在编写一个工具或者分析型工具，希望通过暴漏我们的底层能力，以让用户自由发挥他们的创造性用途，比如类似go-delve/delve希望用户可以按需执行自动化调试，我们其实可以将starlark解释器引擎集成到我们的程序中，然后通过一点胶水代码打通starlark与我们的程序，使得starlark解释器调用starlark函数来执行我们程序中定义的函数。这无疑会释放我们程序的底层能力，允许使用者在底层能力开放程度受控的情况下进一步去发挥、去挖掘。
+I first learned about the Starlark language while studying bazelbuild, and gained a deeper understanding of it while learning go-delve/delve. If we are writing a tool or analysis tool and want to expose our underlying capabilities to allow users to freely exercise their creativity, such as how go-delve/delve enables users to perform automated debugging as needed, we can integrate the Starlark interpreter engine into our program. Then through some glue code connecting Starlark with our program, we can enable the Starlark interpreter to call Starlark functions to execute functions defined in our program. This undoubtedly unleashes our program's underlying capabilities, allowing users to further explore and utilize them while maintaining controlled access to those low-level capabilities.
 
-本文演示了如何轻松starklark集成到您的Go程序中，starlark的更多用法请参考 [bazelbuild/starlark](https://github.com/bazelbuild/starlark)。
+This article demonstrates how to easily integrate Starlark into your Go program. For more usage of Starlark, please refer to [bazelbuild/starlark](https://github.com/bazelbuild/starlark).
 
-本文还介绍了调试器与starlark集成以及使用示例，有自动化测试诉求，或者希望分享你的调试会话的时候，可以通过这种方式来实现。
+The article also introduces debugger integration with Starlark and usage examples. When you need automated testing or want to share your debugging sessions, you can achieve this through this approach.

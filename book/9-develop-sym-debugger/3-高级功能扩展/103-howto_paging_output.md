@@ -1,60 +1,60 @@
-## 分页输出的设计与实现
+## Design and Implementation of Paging Output
 
-### 功能概述
+### Feature Overview
 
-分页输出（Paging Output）是调试器中的一个重要功能，它能够智能地处理大量输出内容，通过分页器（如 less、more 等）来展示输出，提升用户体验。这个功能在查看大量调试信息、堆栈跟踪或变量内容时特别有用。
+Paging Output is an important feature in debuggers that intelligently handles large amounts of output content by displaying it through pagers (such as less, more, etc.), enhancing the user experience. This feature is particularly useful when viewing large amounts of debug information, stack traces, or variable contents.
 
-### 核心设计
+### Core Design
 
-分页输出的核心是 `pagingWriter` 结构体，它实现了 `io.Writer` 接口，可以动态决定是否使用分页器来展示输出。主要设计特点包括：
+The core of paging output is the `pagingWriter` struct, which implements the `io.Writer` interface and can dynamically decide whether to use a pager to display output. The main design features include:
 
-1. 支持多种输出模式：
+1. Support for multiple output modes:
 
-   - 直接输出到终端
-   - 通过分页器输出
-   - 输出到文件
-2. 智能判断：
+   - Direct output to terminal
+   - Output through pager
+   - Output to file
+2. Intelligent decision making:
 
-   - 根据输出内容长度决定是否使用分页
-   - 考虑终端窗口大小
-   - 支持用户配置
+   - Determines whether to use paging based on output content length
+   - Considers terminal window size
+   - Supports user configuration
 
-### 关键实现
+### Key Implementation
 
 ```go
 type pagingWriter struct {
-    mode     pagingWriterMode    // 输出模式
-    w        io.Writer          // 基础输出流
-    buf      []byte             // 输出缓冲区
-    cmd      *exec.Cmd          // 分页器命令
-    cmdStdin io.WriteCloser     // 分页器输入流
-    pager    string            // 分页器程序名，如环境变量设置PAGER=less or PAGER=more
-    lastnl   bool              // 上次输出是否以换行结束
-    cancel   func()            // 取消函数
+    mode     pagingWriterMode    // Output mode
+    w        io.Writer          // Base output stream
+    buf      []byte             // Output buffer
+    cmd      *exec.Cmd          // Pager command
+    cmdStdin io.WriteCloser     // Pager input stream
+    pager    string            // Pager program name, e.g., PAGER=less or PAGER=more from environment variables
+    lastnl   bool              // Whether the last output ended with a newline
+    cancel   func()            // Cancel function
 
-    lines, columns int         // 终端窗口大小
+    lines, columns int         // Terminal window size
 }
 ```
 
-#### 输出流程
+#### Output Process
 
-1. 初始化阶段：
+1. Initialization phase:
 
-   - 检测终端大小
-   - 确定输出模式
-   - 准备分页器（如果需要）
-2. 写入阶段：
+   - Detect terminal size
+   - Determine output mode
+   - Prepare pager (if needed)
+2. Writing phase:
 
-   - 缓冲输出内容
-   - 根据内容长度和终端大小决定是否启用分页
-   - 将内容写入到目标（终端/分页器/文件）
-3. 清理阶段：
+   - Buffer output content
+   - Decide whether to enable paging based on content length and terminal size
+   - Write content to target (terminal/pager/file)
+3. Cleanup phase:
 
-   - 关闭分页器
-   - 清理缓冲区
-   - 重置状态
+   - Close pager
+   - Clear buffer
+   - Reset state
 
-### 流程图
+### Flow Diagram
 
 ```mermaid
 sequenceDiagram
@@ -64,44 +64,44 @@ sequenceDiagram
     participant Pager
     participant File
 
-    App->>PagingWriter: 写入内容
-    PagingWriter->>PagingWriter: 缓冲内容
+    App->>PagingWriter: Write content
+    PagingWriter->>PagingWriter: Buffer content
   
-    alt 内容较短
-        PagingWriter->>Terminal: 直接输出
-    else 内容较长
-        PagingWriter->>Pager: 启动分页器
-        PagingWriter->>Pager: 写入内容
-        Pager->>Terminal: 分页显示
-    else 输出到文件
-        PagingWriter->>File: 直接写入
+    alt Short content
+        PagingWriter->>Terminal: Direct output
+    else Long content
+        PagingWriter->>Pager: Start pager
+        PagingWriter->>Pager: Write content
+        Pager->>Terminal: Paged display
+    else Output to file
+        PagingWriter->>File: Direct write
     end
   
-    PagingWriter->>PagingWriter: 清理资源
+    PagingWriter->>PagingWriter: Clean up resources
 ```
 
-### 使用场景
+### Use Cases
 
-1. 调试会话记录：
+1. Debug session recording:
 
-   - 使用 transcript 命令时，可以选择是否启用分页
-   - 大量输出时自动切换到分页模式
-2. 变量查看：
+   - When using the transcript command, can choose whether to enable paging
+   - Automatically switches to paging mode for large outputs
+2. Variable inspection:
 
-   - 查看大型数据结构时自动分页
-   - 支持在分页模式下搜索和导航
-3. 堆栈跟踪：
+   - Automatic paging when viewing large data structures
+   - Supports search and navigation in paging mode
+3. Stack traces:
 
-   - 长堆栈信息自动分页
-   - 便于逐页查看调用链
+   - Automatic paging for long stack information
+   - Facilitates page-by-page viewing of call chains
 
-### 小结
+### Summary
 
-分页输出功能通过智能的内容管理和展示方式，显著提升了调试器的可用性。它能够：
+The paging output feature significantly improves the usability of the debugger through intelligent content management and display methods. It can:
 
-1. 自动适应不同的输出场景
-2. 提供更好的用户体验
-3. 有效处理大量输出内容
-4. 保持输出的一致性和可读性
+1. Automatically adapt to different output scenarios
+2. Provide better user experience
+3. Effectively handle large amounts of output content
+4. Maintain output consistency and readability
 
-这个功能的设计充分考虑了实际使用场景，是调试器输出系统的重要组成部分。
+This feature's design fully considers actual usage scenarios and is an important component of the debugger's output system. 

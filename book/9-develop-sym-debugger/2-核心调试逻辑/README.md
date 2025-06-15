@@ -1,5 +1,5 @@
-## 核心调试逻辑
+## Core Debugging Logic
 
-接下来，我们将开发一个面向Go语言的符号级调试器，它除了具备前面介绍过的基础的指令级调试能力，也会支持源码级别的调试，同时也会根据Go的语言特性来提供一些更友好易用的调试能力，如支持协程级别（而非线程级别）的断点能力，支持切换到不同的线程、协程，支持函数调用，等等吧。
+Next, we will develop a symbol-level debugger for Go language. In addition to the basic instruction-level debugging capabilities introduced earlier, it will also support source code level debugging. Furthermore, it will provide more user-friendly debugging capabilities based on Go's language features, such as supporting goroutine-level (rather than thread-level) breakpoints, switching between different threads and goroutines, function calls, and more.
 
-和前面介绍指令级调试时的内容组织类似，我们会先对调试器的整体框架进行介绍，比如如何实现前后端分离式架构，前后端RPC通信如何设计实现，UI层、Service层、符号层、目标层各自可以如何进行扩展。然后，我们介绍下调试器要支持的调试方式（attach、exec、debug、test、core、trace），以及调试会话中要支持的调试命令（breakpoint、tracepoint、continue、list、print、bt，等等）。最后设计实现小节，我们再介绍各个调试命令的实现细节。
+Similar to the organization of instruction-level debugging content introduced earlier, we will first introduce the overall framework of the debugger, such as how to implement a front-end and back-end separated architecture, how to design and implement RPC communication between front-end and back-end, and how to extend the UI layer, Service layer, Symbol layer, and Target layer respectively. Then, we will introduce the debugging methods that the debugger needs to support (attach, exec, debug, test, core, trace), as well as the debugging commands that need to be supported in debugging sessions (breakpoint, tracepoint, continue, list, print, bt, etc.). Finally, in the implementation section, we will introduce the implementation details of various debugging commands.

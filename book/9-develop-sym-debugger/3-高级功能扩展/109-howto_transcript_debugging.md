@@ -1,8 +1,8 @@
-## transcript 设计与实现
+## Design and Implementation of transcript
 
-### 调试记录本
+### Debugging Notebook
 
-大家在执行Linux命令时，为了记录刚才一系列操作中执行的命令，以及命令的输出，通常我们会使用 `script` 命令来完成这个事情。系统学习过Linux命令行操作的读者，对此应该都不会感到陌生。
+When executing Linux commands, to record the commands executed in a series of operations and their outputs, we typically use the `script` command. Readers who have systematically learned Linux command-line operations should be familiar with this.
 
 see `man 1 script`:
 
@@ -21,24 +21,24 @@ DESCRIPTION
        typescript.
 ```
 
-其实对于调试场景，我们也很希望能拥有这样的调试能力。调试过程大多数是循序渐进的，不大可能第一遍调试就100%定位到问题，同行我们需要参考之前执行的调试过程，重新发起多轮调试才能定位到问题源头。tinydbg（dlv）就设计实现了 `transcript` 命令来实现这个操作，保存您在调试会话中生成的调试命令、命令输出到一个您指定的文件中去，方便后续查看。
+In fact, for debugging scenarios, we also hope to have such debugging capabilities. The debugging process is mostly step-by-step, and it's unlikely to locate the problem 100% on the first attempt. Often, we need to refer to previous debugging processes and initiate multiple rounds of debugging to identify the root cause. tinydbg (dlv) has designed and implemented the `transcript` command to achieve this functionality, saving your debugging commands and their outputs to a specified file for future reference.
 
-### 功能概述
+### Feature Overview
 
-`transcript` 命令用于将调试会话中的命令输出记录到文件中，支持追加或覆盖模式，并可选择是否同时输出到标准输出。这个功能对于保存调试会话记录、生成调试报告或进行后续分析非常有用。
+The `transcript` command is used to record command outputs from debugging sessions to a file, supporting append or overwrite modes, and optionally suppressing standard output. This feature is very useful for saving debugging session records, generating debugging reports, or conducting subsequent analysis.
 
-### 执行流程
+### Execution Flow
 
-1. 用户在前端输入 `transcript [options] <output file>` 命令。
-2. 前端解析命令参数，包括：
-   - `-t`: 如果输出文件存在则截断
-   - `-x`: 抑制标准输出
-   - `-off`: 关闭转录功能
-3. 后端根据配置打开或关闭文件输出流。
-4. 在调试会话中，所有命令的输出都会被写入到指定的文件中。
-5. 用户可以随时通过 `transcript -off` 停止记录。
+1. User inputs `transcript [options] <output file>` command in the frontend.
+2. Frontend parses command parameters, including:
+   - `-t`: Truncate if output file exists
+   - `-x`: Suppress standard output
+   - `-off`: Turn off transcription
+3. Backend opens or closes file output stream based on configuration.
+4. During the debugging session, all command outputs are written to the specified file.
+5. User can stop recording at any time using `transcript -off`.
 
-### 关键源码片段
+### Key Code Snippet
 
 ```go
 var transcriptCmd = func(c *DebugSession) *command {
@@ -57,7 +57,7 @@ Using the -off option disables the transcript.`,
 }
 ```
 
-### 流程图
+### Flow Diagram
 
 ```mermaid
 sequenceDiagram
@@ -65,28 +65,28 @@ sequenceDiagram
     participant Debugger
     participant File
     User->>Debugger: transcript [-t] [-x] <file>
-    alt 新文件
-        Debugger->>File: 创建新文件
-    else 已存在文件
-        alt -t 选项
-            Debugger->>File: 截断文件
-        else 无 -t 选项
-            Debugger->>File: 追加到文件
+    alt New File
+        Debugger->>File: Create new file
+    else Existing File
+        alt -t option
+            Debugger->>File: Truncate file
+        else No -t option
+            Debugger->>File: Append to file
         end
     end
-    loop 命令执行
-        User->>Debugger: 执行命令
-        alt -x 选项
-            Debugger->>File: 只写入文件
-        else 无 -x 选项
-            Debugger->>File: 写入文件
-            Debugger->>User: 输出到终端
+    loop Command Execution
+        User->>Debugger: Execute command
+        alt -x option
+            Debugger->>File: Write to file only
+        else No -x option
+            Debugger->>File: Write to file
+            Debugger->>User: Output to terminal
         end
     end
     User->>Debugger: transcript -off
-    Debugger->>File: 关闭文件
+    Debugger->>File: Close file
 ```
 
-### 小结
+### Summary
 
-transcript 命令为调试会话提供了完整的输出记录功能，通过灵活的选项配置，可以满足不同的记录需求。这个功能对于调试过程的追踪、问题分析和知识分享都很有帮助。其设计充分考虑了实用性和灵活性，是调试工具中一个重要的辅助功能。
+The transcript command provides comprehensive output recording functionality for debugging sessions. Through flexible option configuration, it can meet various recording needs. This feature is helpful for tracking debugging processes, problem analysis, and knowledge sharing. Its design fully considers practicality and flexibility, making it an important auxiliary feature in debugging tools.

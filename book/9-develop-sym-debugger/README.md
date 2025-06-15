@@ -1,19 +1,19 @@
-## 调试器：开发者的得力助手
+## Debugger: A Developer's Trusted Assistant
 
-### 无法避免的bug
+### Inevitable Bugs
 
-从打孔卡片时代开始，到机器指令、汇编语言，再到现在五花八门的高级编程语言，编程语言的表达能力和易用性不断提升，编译器和静态分析工具也日益完善，开发人员对计算机系统的理解也越来越深入。然而，bug依然不能完全避免，成为软件开发中永恒的挑战。
+From the era of punch cards to machine instructions, assembly language, and now to various high-level programming languages, programming languages have continuously improved in terms of expressiveness and usability. Compilers and static analysis tools have become increasingly sophisticated, and developers' understanding of computer systems has deepened. However, bugs remain unavoidable, becoming an eternal challenge in software development.
 
-犯错误并不可怕，能够及时发现错误、定位问题根源并纠正错误才是关键所在。另外，bug的存在并不意味着它一定会表现出明显的"症状"。有些bug是必现的，有些是间歇性出现的，有些则潜伏很久才会表现出症状，而有些可能永远不会被触发。有些flaky tests更令人头疼，即使是相同的输入也不一定能复现问题。bug潜藏深浅不一，进一步增加了它们被定位和修复的难度。
+Making mistakes is not terrible; the key is being able to promptly detect errors, locate the root cause of problems, and correct them. Additionally, the existence of a bug doesn't necessarily mean it will show obvious "symptoms." Some bugs are reproducible, some occur intermittently, some remain latent for a long time before showing symptoms, and some may never be triggered. Some flaky tests are even more troublesome, as they may not reproduce the problem even with identical inputs. Bugs hide at varying depths, further increasing the difficulty of locating and fixing them.
 
-### 高效调试方法论
+### Efficient Debugging Methodology
 
-要高效解决bug，首要任务是在问题出现时及时保留现场。这包括隔离问题服务实例供开发人员调查、生成进程core文件以供分析等措施。这些都是为后续深入排查打下基础。及时保留问题现场只是高效解决问题的第一步，还需要有趁手的"兵器"来深入"症状"内部来一探究竟、定位bug的源头。
+To efficiently solve bugs, the primary task is to preserve the scene when a problem occurs. This includes isolating the problematic service instance for developers to investigate and generating process core files for analysis. These measures lay the foundation for subsequent in-depth investigation. Preserving the problem scene promptly is only the first step in efficient problem-solving; we also need effective "tools" to probe deep into the "symptoms" and locate the source of the bug.
 
-有些有经验的开发人员，会考虑通过错误日志、走读代码来发现定位查找bug原因，实践证明，这也是一个比较实用的方式，但是任何方法都有它的适用范畴。有些极端的声音，比如，"你不需要一个调试器"。而真实情况是，并非所有的bug都可以靠日志来简单的定位，因为不可能通过日志来跟踪每一行语句的执行前后的状态变化。
+Some experienced developers consider finding and locating bug causes through error logs and code review, which has proven to be a practical approach. However, every method has its applicable scope. Some extreme voices suggest that "you don't need a debugger." The reality is that not all bugs can be simply located through logs, as it's impossible to track the state changes before and after each statement's execution through logs.
 
-根据具体问题，识别并选择合适的调试方法，才是更科学的做法。
+Identifying and choosing appropriate debugging methods based on specific problems is a more scientific approach.
 
-### 调试器的价值
+### The Value of Debuggers
 
-调试器远不止是一个简单的查错工具。它不仅能帮助定位bug，更是探索和理解系统内部运作的绝佳工具。通过调试器，我们获得了一个"上帝视角"，可以观察任何系统的运行细节，深入理解各种算法的执行过程。对于那些渴望知其然更知其所以然的开发者来说，调试器就像是打开了一扇通向知识宝库的大门。
+A debugger is far more than just a simple error-finding tool. It not only helps locate bugs but is also an excellent tool for exploring and understanding the internal workings of systems. Through a debugger, we gain a "God's perspective," allowing us to observe the running details of any system and deeply understand the execution process of various algorithms. For developers who aspire to know not just what but why, a debugger is like opening a door to a treasure trove of knowledge.

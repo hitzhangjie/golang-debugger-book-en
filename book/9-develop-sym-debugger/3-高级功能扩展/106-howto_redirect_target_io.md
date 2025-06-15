@@ -1,60 +1,60 @@
-## 进程IO重定向
+## Process I/O Redirection
 
-### 为什么需要支持输入输出重定向？
+### Why Do We Need Input/Output Redirection Support?
 
-在调试程序时，控制程序的输入输出流是非常必要的，原因如下：
+When debugging programs, controlling the input and output streams is essential for several reasons:
 
-1. **交互式程序**：许多程序需要用户交互输入。如果没有适当的重定向支持，调试这类程序将会变得困难或不可能。
-2. **测试和自动化**：重定向输入输出允许进行自动化测试场景，可以程序化地提供输入并捕获输出进行验证。
-3. **调试环境控制**：有时我们需要将调试器的输入输出与目标程序的输入输出分开，以避免混淆并保持清晰的调试会话。
+1. **Interactive Programs**: Many programs require user interaction input. Without proper redirection support, debugging such programs would become difficult or impossible.
+2. **Testing and Automation**: Redirecting input and output allows for automated testing scenarios, enabling programmatic input provision and output capture for verification.
+3. **Debug Environment Control**: Sometimes we need to separate the debugger's input/output from the target program's input/output to avoid confusion and maintain a clear debugging session.
 
-### tinydbg中的重定向方法
+### Redirection Methods in tinydbg
 
-tinydbg提供了两种主要方法来控制目标程序的输入输出：
+tinydbg provides two main methods to control the target program's input and output:
 
-#### 1. TTY重定向（`--tty`）
+#### 1. TTY Redirection (`--tty`)
 
-`--tty`选项允许你指定一个TTY设备用于目标程序的输入输出。这对于需要正确终端界面的交互式程序特别有用。
+The `--tty` option allows you to specify a TTY device for the target program's input and output. This is particularly useful for interactive programs that require proper terminal interface.
 
-使用方法：
+Usage:
 
 ```bash
 tinydbg debug --tty /dev/pts/X main.go
 ```
 
-#### 2. 文件重定向（`-r`）
+#### 2. File Redirection (`-r`)
 
-`-r`选项允许你将目标程序的输入输出重定向到文件。这对于非交互式程序或需要捕获输出进行后续分析的情况很有用。
+The `-r` option allows you to redirect the target program's input and output to files. This is useful for non-interactive programs or situations where output needs to be captured for later analysis.
 
-使用方法：
+Usage:
 
 ```bash
 tinydbg debug -r stdin=in.txt,stdout=out.txt,stderr=err.txt main.go
 ```
 
-#### 实现细节
+#### Implementation Details
 
-当启动调试会话时，tinydbg通过以下过程处理标准输入输出流（stdin、stdout、stderr）的重定向：
+When starting a debugging session, tinydbg handles the redirection of standard input/output streams (stdin, stdout, stderr) through the following process:
 
-1. 对于TTY重定向：
-   - 打开指定的TTY设备
-   - 将目标程序的文件描述符重定向到这个TTY
-   - 这允许与目标程序进行适当的终端交互
+1. For TTY Redirection:
+   - Open the specified TTY device
+   - Redirect the target program's file descriptors to this TTY
+   - This allows proper terminal interaction with the target program
 
 ```go
-// TTY重定向实现
+// TTY Redirection Implementation
 func setupTTY(cmd *exec.Cmd, ttyPath string) error {
 	tty, err := os.OpenFile(ttyPath, os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("open tty: %v", err)
 	}
 
-	// 设置标准输入输出
+	// Set standard input/output
 	cmd.Stdin = tty
 	cmd.Stdout = tty
 	cmd.Stderr = tty
 
-	// 设置进程属性
+	// Set process attributes
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setctty: true,
 		Setsid:  true,
@@ -64,17 +64,17 @@ func setupTTY(cmd *exec.Cmd, ttyPath string) error {
 }
 ```
 
-2. 对于文件重定向：
-   - 打开指定的文件
-   - 将目标程序的文件描述符重定向到这些文件
-   - 这实现了输入输出的捕获和重放功能
+2. For File Redirection:
+   - Open the specified files
+   - Redirect the target program's file descriptors to these files
+   - This implements input/output capture and replay functionality
 
-在Go程序中实现重定向时，我们主要通过设置 `os/exec.Cmd` 的 `SysProcAttr` 和标准输入输出来实现：
+When implementing redirection in Go programs, we mainly achieve this by setting the `SysProcAttr` of `os/exec.Cmd` and standard input/output:
 
 ```go
-// 文件重定向实现
+// File Redirection Implementation
 func setupFileRedirection(cmd *exec.Cmd, stdin, stdout, stderr string) error {
-	// 设置标准输入
+	// Set standard input
 	if stdin != "" {
 		stdinFile, err := os.OpenFile(stdin, os.O_RDONLY, 0)
 		if err != nil {
@@ -83,7 +83,7 @@ func setupFileRedirection(cmd *exec.Cmd, stdin, stdout, stderr string) error {
 		cmd.Stdin = stdinFile
 	}
 
-	// 设置标准输出
+	// Set standard output
 	if stdout != "" {
 		stdoutFile, err := os.OpenFile(stdout, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
@@ -92,7 +92,7 @@ func setupFileRedirection(cmd *exec.Cmd, stdin, stdout, stderr string) error {
 		cmd.Stdout = stdoutFile
 	}
 
-	// 设置标准错误
+	// Set standard error
 	if stderr != "" {
 		stderrFile, err := os.OpenFile(stderr, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
@@ -105,9 +105,9 @@ func setupFileRedirection(cmd *exec.Cmd, stdin, stdout, stderr string) error {
 }
 ```
 
-### 测试示例
+### Test Example
 
-假定我们有如下程序，这个程序涉及到输入输出：
+Let's assume we have the following program that involves input and output:
 
 ```go
 package main
@@ -146,39 +146,39 @@ func main() {
 }
 ```
 
-下面我们看看使用 `-tty` 和 `-r` 重定向进行调试的过程。
+Let's look at the debugging process using `-tty` and `-r` redirection.
 
-#### TTY重定向示例
+#### TTY Redirection Example
 
-让我们通过 `tty_demo`程序来看一个实际的例子：
+Let's look at a practical example using the `tty_demo` program:
 
-1. 首先，使用socat创建一个新的PTY对：
+1. First, create a new PTY pair using socat:
 
 ```bash
 socat -d -d pty,raw,echo=0 pty,raw,echo=0
 ```
 
-2. 记下输出中的两个PTY路径（例如，`/dev/pts/23`和 `/dev/pts/24`）
-3. 在一个终端中，使用第一个PTY运行程序：
+2. Note the two PTY paths in the output (e.g., `/dev/pts/23` and `/dev/pts/24`)
+3. In one terminal, run the program using the first PTY:
 
 ```bash
 tinydbg debug --tty /dev/pts/23 main.go
 ```
 
-4. 在另一个终端中，你可以使用以下方式与程序交互：
+4. In another terminal, you can interact with the program using:
 
 ```bash
 socat - /dev/pts/24
 ```
 
-程序将：
+The program will:
 
-- 打印欢迎信息
-- 等待你的输入
-- 回显你输入的内容
-- 继续运行直到你输入'quit'
+- Print a welcome message
+- Wait for your input
+- Echo your input
+- Continue running until you type 'quit'
 
-示例会话：
+Example session:
 
 ```
 TTY Demo Program
@@ -191,42 +191,42 @@ You typed: world
 Goodbye!
 ```
 
-#### 文件重定向示例
+#### File Redirection Example
 
-要测试文件重定向，你可以：
+To test file redirection, you can:
 
-1. 创建用于重定向的文件input.txt,output.txt
-2. 使用重定向运行程序：
+1. Create files for redirection: input.txt, output.txt
+2. Run the program with redirection:
 
 ```bash
 tinydbg debug -r stdin=input.txt,stdout=output.txt,stderr=output.txt main.go
 ```
 
-3. 预先或者调试期间，将希望输入的数据写到文件，如：`echo "data..." >> input.txt`。
-4. 通过 `tail -f output.txt` 观察程序输出。
-5. 执行调试过程。
+3. Write the desired input data to the file before or during debugging, e.g.: `echo "data..." >> input.txt`
+4. Observe program output through `tail -f output.txt`
+5. Execute the debugging process.
 
-让我们看一个完整的文件重定向测试示例：
+Let's look at a complete file redirection test example:
 
 ```bash
-## 1. 创建输入文件
+## 1. Create input file
 cat > input.txt << EOF
 hello
 world
 quit
 EOF
 
-## 2. 创建空的输出文件
+## 2. Create empty output file
 touch output.txt
 
-## 3. 启动程序并重定向
+## 3. Start program with redirection
 tinydbg debug -r stdin=input.txt,stdout=output.txt,stderr=output.txt main.go
 
-## 4. 在另一个终端中观察输出
+## 4. Observe output in another terminal
 tail -f output.txt
 ```
 
-预期的输出文件内容：
+Expected output file content:
 
 ```
 TTY Demo Program
@@ -239,12 +239,12 @@ You typed: world
 Goodbye!
 ```
 
-#### 两种方式对比
+#### Comparison of Both Methods
 
-使用文件进行重定向的方式，想必 `socat - /dev/pts/X` 的方式相比，可能大家更倾向于使用，因为它不需要你去执行不太熟悉的socat、tmux、screen之类的涉及到tty操作创建、读写的操作，但是明显 `socat - /dev/pts/X` 可以同时操作读写更方便。不过使用文件重定向在调试器的自动化测试过程中可能是一种更加稳定有效的方式。
+Compared to the `socat - /dev/pts/X` method, the file redirection approach might be more preferred by users as it doesn't require familiarity with operations involving tty creation, reading, and writing using tools like socat, tmux, or screen. However, `socat - /dev/pts/X` offers more convenient simultaneous read/write operations. Nevertheless, file redirection might be a more stable and effective approach in the automation testing process of the debugger.
 
-### 本节总结
+### Summary
 
-tinydbg的重定向支持提供了灵活的方式来控制目标程序的输入输出流，使得调试交互式和非交互式程序都变得更加容易。`--tty`选项特别适用于需要终端交互的程序，而 `-r`选项则提供了一种通过文件捕获和重放输入输出的方式。
+tinydbg's redirection support provides flexible ways to control the target program's input and output streams, making it easier to debug both interactive and non-interactive programs. The `--tty` option is particularly suitable for programs requiring terminal interaction, while the `-r` option provides a way to capture and replay input/output through files.
 
-这些特性使tinydbg更加通用，适用于更广泛的调试场景，从简单的命令行工具到复杂的交互式应用程序。
+These features make tinydbg more versatile, suitable for a wider range of debugging scenarios, from simple command-line tools to complex interactive applications.

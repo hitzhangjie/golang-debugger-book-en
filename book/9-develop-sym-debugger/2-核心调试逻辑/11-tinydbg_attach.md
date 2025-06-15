@@ -1,10 +1,10 @@
 ## Attach
 
-### 实现目标：`tinydbg attach <pid>`
+### Implementation Goal: `tinydbg attach <pid>`
 
-本节介绍attach这个启动调试的命令：`tinydbg attach <pid> [executable] [flags]`，attach操作将挂住目标进程、让目标进程停下来。
+This section introduces the attach command for starting debugging: `tinydbg attach <pid> [executable] [flags]`. The attach operation will attach to the target process and make it stop.
 
-与指令级调试器godbg attach相比，这里的符号级调试器实现tinydbg attach增加了更多选项，来支持更加友好地调试。
+Compared to the instruction-level debugger godbg attach, the symbol-level debugger tinydbg attach adds more options to support more user-friendly debugging.
 
 ```bash
 $ tinydbg help attach
@@ -35,43 +35,43 @@ Global Flags:
       --log-output string                Comma separated list of components that should produce debug output (see 'dlv help log')
 ```
 
-我们解释下上面的attach命令选项：
+Let's explain the attach command options above:
 
-1. tinydbg attach pid，这个没有什么疑问，挂住正在执行的进程id==pid的进程；
-2. --waitfor, --waitfor-duration, --waitfor-interval，等一个进程名前缀为xxx的进程起来、然后挂住，详见 [waitfor设计](./1-tinydbg_attach_waitfor.md)。
-3. --accept-multiclient，这个是为了允许同一个debugger backend可以服务于多个debugger client，可以同时调试，或者先后调试，详见 [multiclient设计](../3-高级功能扩展/108-howto_accept_multiclient.md)。
-4. --allow-non-terminal-interactive，如果您想在CI/CD或者自动化调试流程中执行上述非基于控制终端的调试；
-5. --headless，启动一个debugger backend并作为服务器模式运行；
-6. --listen，启动debugger backend并作为服务器模式运行，同时指定服务器的监听地址；
-7. --log, --log-output，--log-dest, 是否启用服务端日志，启动哪些层次的日志，日志输出到哪里，详见 [日志系统设计](../1-架构设计/6-日志系统设计)。
+1. tinydbg attach pid - This is straightforward, attaching to a running process with id==pid;
+2. --waitfor, --waitfor-duration, --waitfor-interval - Wait for a process with name prefix xxx to start and then attach, see [waitfor design](./1-tinydbg_attach_waitfor.md).
+3. --accept-multiclient - This allows the same debugger backend to serve multiple debugger clients, enabling simultaneous or sequential debugging, see [multiclient design](../3-高级功能扩展/108-howto_accept_multiclient.md).
+4. --allow-non-terminal-interactive - If you want to perform non-terminal-based debugging in CI/CD or automated debugging workflows;
+5. --headless - Start a debugger backend and run it in server mode;
+6. --listen - Start a debugger backend in server mode and specify the server's listening address;
+7. --log, --log-output, --log-dest - Whether to enable server logging, which levels of logging to enable, and where to output logs, see [logging system design](../1-架构设计/6-日志系统设计).
 
-OK，我们一起来看看Attach的详细设计实现。
+OK, let's look at the detailed design and implementation of Attach.
 
-### 基础知识
+### Basic Knowledge
 
-在第六章指令级调试器开发过程中，我们结合Linux内核源码非常详细地介绍了syscall.PtraceAttach(...)的处理过程，如果您已经忘记了这里的细节，可以回去再看看相应内容。这里我们仅通过一张时序图对关键处理逻辑进行总结。
+In Chapter 6 on instruction-level debugger development, we combined Linux kernel source code to very详细介绍介绍了syscall.PtraceAttach(...)的处理过程. If you've forgotten these details, you can go back and review the relevant content. Here we'll summarize the key processing logic through a sequence diagram.
 
-FIXME: 这个图有问题，参考第6章start+attach的put it together部分总结。
+FIXME: This diagram has issues, refer to Chapter 6's start+attach "put it together" section for summary.
 
 <p align="center">
 <img alt="tinydbg attach" src="./assets/how_attach_works.png" />
 </p>
 
-大致处理过程：
+General processing flow:
 
-- 用户在前端输入 `attach <pid>` 命令。
-- 前端通过 json-rpc（远程）或 net.Pipe（本地）将 attach 请求发送给后端。
-- 后端解析请求，调用系统API（如 ptrace 或等效机制）附加到目标进程。
-- 后端初始化调试上下文（如符号表、断点、线程信息等）。
-- 返回 attach 结果，前端进入调试会话。
+- User inputs `attach <pid>` command in the frontend.
+- Frontend sends attach request to backend via json-rpc (remote) or net.Pipe (local).
+- Backend parses request and calls system API (like ptrace or equivalent mechanism) to attach to target process.
+- Backend initializes debugging context (like symbol table, breakpoints, thread information, etc.).
+- Returns attach result, frontend enters debugging session.
 
-### 代码实现
+### Code Implementation
 
-attach操作作为我们第一个介绍的调试命令实现，我们有必要在此详细地把调试器前后端交互的全流程介绍一遍，介绍后续调试命令的时候，我们就不会再这么重复地、详细地介绍了。所以请读者朋友们耐心。
+As the first debugging command implementation we're introducing, we need to explain the complete interaction flow between the debugger frontend and backend in detail here. For subsequent debugging commands, we won't repeat this detailed explanation. So please be patient, readers.
 
-#### Shell中执行 `tinydbg attach <pid>`
+#### Executing `tinydbg attach <pid>` in Shell
 
-首先，用户执行命令 `tinydbg attach <pid>`，tinydbg主程序是一个基于spf13/cobra的命令行程序：
+First, when the user executes the command `tinydbg attach <pid>`, the tinydbg main program is a command-line program based on spf13/cobra:
 
 file: path-to/tinydbg/main.go
 
@@ -116,7 +116,7 @@ func main() {
 
 ```
 
-既然是spf13/cobra管理的命令行程序，那它的子命令注册逻辑是大同小异的，它应该有个对应的attach subcmd。
+Since it's a command-line program managed by spf13/cobra, its subcommand registration logic is similar, it should have a corresponding attach subcmd.
 
 see: path-to/tinydbg/cmds/cmd_root.go
 
@@ -144,7 +144,7 @@ func New() *cobra.Command {
 }
 ```
 
-我们看到了这里的attachCommand的注册，当执行 `tinydbg attach` 时实际上执行的句式attachCommand.Run方法。
+We can see the registration of attachCommand here. When executing `tinydbg attach`, it actually executes the attachCommand.Run method.
 
 see: path-to/tinydbg/cmds/cmd_attach.go
 
@@ -191,17 +191,17 @@ func attachCmd(_ *cobra.Command, args []string) {
 }
 ```
 
-这里 `attachCommand.Run()` -> `attachCmd(...)` -> `execute(pid, args, conf, ....)` ，调试器前端用于前后端通信的RPC client在execute中进行初始化，并完成对server的调用。
+Here `attachCommand.Run()` -> `attachCmd(...)` -> `execute(pid, args, conf, ....)`, the RPC client for frontend-backend communication is initialized in execute and completes the call to the server.
 
-ps：在9.1 架构设计中Service层设计时，我们提到过，对于本地调试其实是通过 preConnectedListener+net.Pipe 来模拟真实了网络连接通信过程。本质上还是按照C/S架构进行请求、处理的。
+ps: In section 9.1 Service Layer Design, we mentioned that for local debugging, we actually simulate real network connection communication through preConnectedListener+net.Pipe. Essentially, it still follows the C/S architecture for requests and processing.
 
-#### attach操作前后端扮演的职责
+#### Frontend and Backend Responsibilities in Attach Operation
 
-执行到execute方法时，才开始体现出前后端分离式架构下前后端的不同职责。对于本地调试模式，execute方法中既有初始化前端JSON-RPC client、调试会话的逻辑，也有初始化后端网络IO和debugger核心功能的逻辑。在远程调试模式下，execute方法主要是后端网络IO和debugger核心功能初始化，前端初始化要通过connect操作来完成，初始化JSON-RPC client和调试会话。
+When executing to the execute method, the different responsibilities of frontend and backend in the separated architecture begin to show. For local debugging mode, the execute method includes both frontend JSON-RPC client initialization and debugging session logic, as well as backend network IO and debugger core functionality initialization. In remote debugging mode, the execute method mainly handles backend network IO and debugger core functionality initialization, while frontend initialization needs to be done through the connect operation to initialize the JSON-RPC client and debugging session.
 
-调试会话的初始化以及工作工程，我们前一节介绍过了。这个小节，我们来看下attach操作，不管是本地调试模式，还是远程调试模式，其实在已经介绍了调试会话的基础上，我们只需要关心attach操作涉及到的调试器后端的debugger核心功能初始化即可。
+We've already introduced the initialization and working process of the debugging session in the previous section. In this section, we only need to focus on the debugger backend's core functionality initialization involved in the attach operation, based on the already introduced debugging session.
 
-实际上，如果是远程调试模式，attach操作其实主要是调试器后端的操作，基本没前端什么事，attach操作并不需要前端发JSON-RPC请求，只需要后端做下网络IO初始化、debugger初始化，然后让debugger attach到目标进程就算结束了。如果是本地调试模式，在调试器后端完成上述初始化之后，调试器前端建立个调试会话就算准备就绪了，后续与后端的通信通过net.Pipe。
+Actually, if it's remote debugging mode, the attach operation is mainly a backend operation, with little frontend involvement. The attach operation doesn't need the frontend to send a JSON-RPC request - it just needs the backend to do network IO initialization and debugger initialization, then let the debugger attach to the target process and that's it. If it's local debugging mode, after the debugger backend completes the above initialization, the debugger frontend establishes a debugging session and it's ready to go, with subsequent communication with the backend through net.Pipe.
 
 see: path-to/tinydbg/cmds/cmd_root.go
 
@@ -241,11 +241,11 @@ func execute(attachPid int, processArgs []string, conf *config.Config, coreFile 
 }
 ```
 
-#### 调试器后端初始化并接受请求
+#### Debugger Backend Initialization and Request Acceptance
 
-调试器后端启动，网络初始化方式有两种方式：
-1、一种是通过--headless模式启动，net.Listen创建一个TCPListener or UnixListener，然后等待入连接请求；
-2、一种是本地模式启动，通过preConnectedListener+net.Pipe，来模拟网络监听、连接操作；
+The debugger backend starts, with two ways of network initialization:
+1. One is through --headless mode startup, net.Listen creates a TCPListener or UnixListener, then waits for incoming connection requests;
+2. One is local mode startup, through preConnectedListener+net.Pipe, to simulate network listening and connection operations;
 
 see: path-to/tinydbg/cmds/cmd_root.go
 
@@ -281,7 +281,7 @@ func execute(attachPid int, processArgs []string, conf *config.Config, coreFile 
 }
 ```
 
-在 `server.Run()` 中开始执行后，会创建一个ptracer并attach到目标进程，然后会开始接受入连接请求并处理RPC请求。
+After `server.Run()` starts executing, it creates a ptracer and attaches to the target process, then starts accepting incoming connection requests and processing RPC requests.
 
 ```go
 // Run starts a debugger and exposes it with an JSON-RPC server. The debugger
@@ -317,17 +317,17 @@ func (s *ServerImpl) Run() error {
 }
 ```
 
-那么，attach操作是什么时候执行的呢？调试器前端不是应该发送一个attach请求给调试器后台吗？理论上确实可以这么干，但是实际上没必要再多一轮RPC了，试想：
-1、如果是远程调试，--headless启动server时我肯定知道要attach哪个tracee了，哪还需要客户端显示发RPC请求；
-2、如果是本地调试，pid参数也已经通过命令行选项传递给进程了，本地调试中直接引用这个选项值即可，没必要再走一遍RPC；
+So, when is the attach operation executed? Shouldn't the debugger frontend send an attach request to the debugger backend? Theoretically it could be done this way, but actually there's no need for another round of RPC. Consider:
+1. If it's remote debugging, when starting the server with --headless, I definitely know which tracee to attach to, so why would the client need to explicitly send an RPC request;
+2. If it's local debugging, the pid parameter has already been passed to the process through command line options, so in local debugging we can directly reference this option value, no need to go through RPC again;
 
-确实如此，所以实际上是没有这个主动Attach的RPC的，不信你可以看看rpc2.Client的接口定义。
+Indeed, so there actually isn't this active Attach RPC. If you don't believe it, you can look at the rpc2.Client interface definition.
 
 see: path-to/tinydbg/service/rpc2c/client.go
 
-#### 调试器后端attach到进程
+#### Debugger Backend Attaching to Process
 
-OK，那紧接前面内容，调试器后端除了网络（listener、accept、serve）相关的初始化，还涉及到建立一个真正的调试器tracer来对目标进程tracee进行控制。其实attach操作就是在这个时候完成的。
+OK, following the previous content, besides network (listener, accept, serve) related initialization, the debugger backend also involves creating a real debugger tracer to control the target process tracee. Actually, the attach operation is completed at this time.
 
 see: path-to/tinydbg/service/debugger/debugger.go
 
@@ -387,7 +387,7 @@ func (d *Debugger) Attach(pid int, path string, waitFor *proc.WaitFor) (*proc.Ta
 }
 ```
 
-我们这里的debugger backend只有native一种实现，我们去掉了gdb、lldb、mozilla rr，你应该支持如果希望扩展应该在这里做做文章。
+Our debugger backend only has a native implementation, we removed gdb, lldb, mozilla rr. You should understand that if you want to extend it, you should make changes here.
 
 ```go
 // Attach to an existing process with the given PID. Once attached, if
@@ -396,7 +396,7 @@ func (d *Debugger) Attach(pid int, path string, waitFor *proc.WaitFor) (*proc.Ta
 //
 // note: we remove the support of reading separate dwarfdata.
 func Attach(pid int, waitFor *proc.WaitFor) (*proc.TargetGroup, error) {
-  // 如果指定了waitfor的方式attach，需要先等进程起来获取到pid
+  // If waitfor attach is specified, need to wait for process to start and get pid
 	if waitFor.Valid() {
 		pid, err = WaitFor(waitFor)
     ...
@@ -404,16 +404,16 @@ func Attach(pid int, waitFor *proc.WaitFor) (*proc.TargetGroup, error) {
 
 	dbp := newProcess(pid)
 
-  // 执行实际的ptrace attach操作
+  // Execute actual ptrace attach operation
 	var err error
 	dbp.execPtraceFunc(func() { err = ptraceAttach(dbp.pid) })
   ...
 
-  // 执行wait操作获取tracee停止状态
+  // Execute wait operation to get tracee stop status
 	_, _, err = dbp.wait(dbp.pid, 0)
 	...
 
-  // tracee停下来后，这里尝试读取tracee的信息，并完成必要设置
+  // After tracee stops, try to read tracee information and complete necessary setup
 	tgt, err := dbp.initialize(findExecutable("", dbp.pid))
   ...
 
@@ -425,11 +425,11 @@ func Attach(pid int, waitFor *proc.WaitFor) (*proc.TargetGroup, error) {
 }
 ```
 
-到这里为止，调试器后端就已经与tracee正确建立了ptrace link关系了，后续前端就可以通过debug.Session发送交互式调试命令，debug.Session内部将其转换为对RPC调用debug.Session.client.Call(...)。
+At this point, the debugger backend has correctly established a ptrace link relationship with the tracee. Subsequently, the frontend can send interactive debugging commands through debug.Session, which internally converts them to RPC calls debug.Session.client.Call(...).
 
-然后调试器后端就通过net.Conn不断接受请求，并按照JSON-RPC进行解码，根据请求参数，找到对应的服务端接口进行处理，接口内部又会调用debugger native中的各种操作来完成对目标进程的实际控制，并逐级返回结果，最终给到前端展示。
+Then the debugger backend continuously accepts requests through net.Conn, decodes them according to JSON-RPC, finds the corresponding server interface for processing based on the request parameters. The interface internally calls various operations in debugger native to complete actual control of the target process, and returns results level by level, finally giving them to the frontend for display.
 
-#### 调试器后端attach到进程后干了什么
+#### What the Debugger Backend Does After Attaching to Process
 
 see path-to/tinydbg/pkg/proc/native/proc.go
 
@@ -520,9 +520,9 @@ func (dbp *nativeProcess) updateThreadList() error {
 }
 ```
 
-看上去attach到目标进程后，就开始读取目标进程的一些信息，包括pid、cmdline、exec、线程列表等等。
+It looks like after attaching to the target process, it starts reading some information about the target process, including pid, cmdline, exec, thread list, etc.
 
-这里需要注意，进程内可能已有多线程被创建，也可能将来会创建新的线程。对于更友好地多线程调试，这些都要被管控起来：
+Note that there may already be multiple threads created in the process, or new threads may be created in the future. For more user-friendly multi-threaded debugging, these all need to be managed:
 
 ```go
 const (
@@ -595,43 +595,43 @@ func (dbp *nativeProcess) addThread(tid int, attach bool) (*nativeThread, error)
 }
 ```
 
-这样就把目标进程中当前已有、将来可能会有的所有线程全部纳入到调试器管控逻辑中来了，调试器可以将它们作为一个组，控制它们全部执行或者暂停。
+This way, all current and future threads in the target process are brought under the debugger's control logic. The debugger can control them as a group, making them all execute or pause.
 
-#### 接受入连接请求并处理请求
+#### Accepting Incoming Connection Requests and Processing Requests
 
-调试器后端收到入连接请求后，就开始对连接上的交互式调试请求进行处理：`s.serveConnection(c)`。这部分我们在前一节调试会话中，已经详细介绍过了，这里就不再赘述了。
+After the debugger backend receives an incoming connection request, it starts processing interactive debugging requests on the connection: `s.serveConnection(c)`. We've already introduced this part in detail in the previous section on debugging sessions, so we won't repeat it here.
 
-至此，attach操作执行完成。如果是本地调试模式的话，通过前端提供的调试会话就直接可以开始交互式的调试了；如果是远程调试模式，则还需要通过connect操作与服务端建立连接、创建一个调试会话才能开始调试。
+At this point, the attach operation is complete. If it's local debugging mode, you can start interactive debugging directly through the debugging session provided by the frontend; if it's remote debugging mode, you still need to establish a connection with the server through the connect operation and create a debugging session before you can start debugging.
 
-#### attach操作不涉及到RPC
+#### Attach Operation Doesn't Involve RPC
 
-对于attach操作，它是不涉及到前后端之间的JSON-RPC调用的，这个我们已经介绍过了，这里特别提一下。当你想查看attach操作的详细代码时，你可以搜索attachCmd，但是不要在rpc2/client.go中搜索响应的RPC方法，因为没有对应的RPC方法。
+For the attach operation, it doesn't involve JSON-RPC calls between frontend and backend, as we've already introduced. Here we specifically mention it. When you want to look at the detailed code for the attach operation, you can search for attachCmd, but don't search for the corresponding RPC method in rpc2/client.go, because there isn't one.
 
-### 执行测试
+### Running Tests
 
 TODO:
-1. 一开始就是单线程程序
-2. 一开始就是多线程程序
-3. 执行期间创建出新线程的程序
+1. Single-threaded program from the start
+2. Multi-threaded program from the start
+3. Program that creates new threads during execution
 
-要观察他们是不是都attach住了，其中1、2都可以验证，3不行，因为attach后全部已有线程都暂停执行了。但是我们还没办法验证3、这点，因为我们还没有实现continue、disconnect等操作来恢复执行。
+To observe if they are all attached, 1 and 2 can be verified, but 3 cannot because after attaching all existing threads are paused. But we can't verify 3 yet because we haven't implemented continue, disconnect and other operations to resume execution.
 
-### 本文总结
+### Summary
 
-本文详细介绍了tinydbg的attach命令实现，主要包括以下几个方面：
+This article detailed the implementation of tinydbg's attach command, mainly including the following aspects:
 
-1. attach命令的选项设计，包括基本的pid附加、waitfor等待进程、多客户端支持等高级特性；
+1. Attach command option design, including basic pid attachment, waitfor process waiting, multi-client support and other advanced features;
 
-2. attach的基础原理，通过时序图展示了从用户输入命令到最终完成进程附加的整个流程；
+2. Basic principles of attach, showing the entire process from user input command to final process attachment through a sequence diagram;
 
-3. 代码实现细节：
-   - 调试器前端如何解析和处理attach命令
-   - 调试器后端如何实现进程附加
-   - 如何处理目标进程的多线程情况
-   - 如何维护线程状态和硬件断点
+3. Code implementation details:
+   - How the debugger frontend parses and processes attach commands
+   - How the debugger backend implements process attachment
+   - How to handle multi-threading in the target process
+   - How to maintain thread state and hardware breakpoints
 
-4. 测试场景设计，包括单线程程序、多线程程序以及运行时创建新线程的程序的attach测试。
+4. Test scenario design, including attach testing for single-threaded programs, multi-threaded programs, and programs that create new threads during runtime.
 
-通过本文的学习，读者应该能够理解调试器是如何实现进程附加功能的，以及在实现过程中需要考虑的各种细节问题。后续章节将在此基础上继续介绍其他调试功能的实现。
+Through this article, readers should understand how the debugger implements process attachment functionality and the various details that need to be considered in the implementation process. Subsequent chapters will continue to introduce the implementation of other debugging features based on this foundation.
 
 

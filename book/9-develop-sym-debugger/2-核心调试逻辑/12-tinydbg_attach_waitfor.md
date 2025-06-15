@@ -1,10 +1,9 @@
-## Attach WaitFor 工作原理
+## How Attach WaitFor Works
 
-### 简介
+### Introduction
 
-在调试进程时，我们经常需要等待目标进程启动后再附加调试器。`waitfor` 机制提供了一种灵活的方式来等待进程启动，它通过匹配进程名称前缀来实现。本文将详细解释这个功能在调试器中是如何工作的。
+When debugging processes, we often need to wait for the target process to start before attaching the debugger. The `waitfor` mechanism provides a flexible way to wait for process startup by matching process name prefixes. This article explains in detail how this functionality works in the debugger.
 
-```bash
 ```bash
 $ tinydbg help attach
 Attach to an already running process and begin debugging it.
@@ -25,41 +24,41 @@ Flags:
       ...
 ```
 
-### 为什么需要 WaitFor
+### Why WaitFor is Needed
 
-在以下场景中，我们需要等待进程：
+We need to wait for processes in the following scenarios:
 
-1. **进程启动时序**：
-   - 调试时需要确保目标进程已经运行
-   - 直接附加到不存在的进程会导致失败
-   - WaitFor 确保只在进程就绪后才进行附加
+1. **Process Startup Timing**:
+   - Debugging requires ensuring the target process is running
+   - Directly attaching to a non-existent process will fail
+   - WaitFor ensures attachment only occurs when the process is ready
 
-2. **进程名称匹配**：
-   - 有时我们只知道进程名称前缀，而不是具体的 PID
-   - WaitFor 允许通过名称前缀匹配进程
-   - 这提供了更灵活的进程选择方式
+2. **Process Name Matching**:
+   - Sometimes we only know the process name prefix, not the specific PID
+   - WaitFor allows matching processes by name prefix
+   - This provides a more flexible way to select processes
 
-3. **超时控制**：
-   - 等待进程启动需要设置合理的超时时间
-   - WaitFor 提供了检查间隔和最大等待时间参数
-   - 这可以防止无限等待，并提供细粒度的控制
+3. **Timeout Control**:
+   - Waiting for process startup requires setting reasonable timeout periods
+   - WaitFor provides check interval and maximum wait time parameters
+   - This prevents infinite waiting and provides fine-grained control
 
-### 实现细节
+### Implementation Details
 
-#### 核心数据结构
+#### Core Data Structure
 
-WaitFor 机制使用一个简单的结构体实现：
+The WaitFor mechanism is implemented using a simple struct:
 
 ```go
 type WaitFor struct {
-    Name               string        // 要匹配的进程名称前缀
-    Interval, Duration time.Duration // 检查间隔和最大等待时间
+    Name               string        // Process name prefix to match
+    Interval, Duration time.Duration // Check interval and maximum wait time
 }
 ```
 
-#### 主要实现
+#### Main Implementation
 
-核心功能在 `native` 包中实现：
+The core functionality is implemented in the `native` package:
 
 ```go
 func WaitFor(waitFor *proc.WaitFor) (int, error) {
@@ -79,16 +78,16 @@ func WaitFor(waitFor *proc.WaitFor) (int, error) {
 }
 ```
 
-#### 进程搜索实现
+#### Process Search Implementation
 
-进程搜索通过以下步骤实现：
+Process search is implemented through the following steps:
 
-1. 遍历 `/proc` 目录查找匹配的进程
-2. 读取进程的 `cmdline` 文件获取其名称
-3. 使用 map 记录已检查过的进程
-4. 通过名称前缀匹配进程
+1. Traverse the `/proc` directory to find matching processes
+2. Read the process's `cmdline` file to get its name
+3. Use a map to record already checked processes
+4. Match processes by name prefix
 
-以下是实现的关键部分：
+Here's the key part of the implementation:
 
 ```go
 func waitForSearchProcess(pfx string, seen map[int]struct{}) (int, error) {
@@ -113,7 +112,7 @@ func waitForSearchProcess(pfx string, seen map[int]struct{}) (int, error) {
         if err != nil {
             continue
         }
-        // 将空字节转换为空格以便字符串比较
+        // Convert null bytes to spaces for string comparison
         for i := range buf {
             if buf[i] == 0 {
                 buf[i] = ' '
@@ -127,9 +126,9 @@ func waitForSearchProcess(pfx string, seen map[int]struct{}) (int, error) {
 }
 ```
 
-#### 与调试器集成
+#### Integration with Debugger
 
-WaitFor 机制集成到调试器的附加功能中：
+The WaitFor mechanism is integrated into the debugger's attach functionality:
 
 ```go
 func Attach(pid int, waitFor *proc.WaitFor) (*proc.TargetGroup, error) {
@@ -140,55 +139,55 @@ func Attach(pid int, waitFor *proc.WaitFor) (*proc.TargetGroup, error) {
             return nil, err
         }
     }
-    // ... 附加实现的其他部分
+    // ... other parts of attach implementation
 }
 ```
 
-### 命令行支持
+### Command Line Support
 
-调试器为 WaitFor 提供了几个命令行选项：
+The debugger provides several command line options for WaitFor:
 
-- `--waitfor`：指定要等待的进程名称前缀
-- `--waitfor-interval`：设置检查间隔（毫秒）
-- `--waitfor-duration`：设置最大等待时间
+- `--waitfor`: Specify the process name prefix to wait for
+- `--waitfor-interval`: Set the check interval (milliseconds)
+- `--waitfor-duration`: Set the maximum wait time
 
-使用示例：
+Usage example:
 ```bash
-## 等待名为 "myapp" 的进程启动
+## Wait for a process named "myapp" to start
 debugger attach --waitfor myapp --waitfor-interval 100 --waitfor-duration 10
 ```
 
-### 代码示例
+### Code Example
 
-以下是使用 WaitFor 的完整示例：
+Here's a complete example of using WaitFor:
 
 ```go
-// 创建 WaitFor 配置
+// Create WaitFor configuration
 waitFor := &proc.WaitFor{
     Name: "myapp",
     Interval: 100 * time.Millisecond,
     Duration: 10 * time.Second,
 }
 
-// 等待进程并附加
+// Wait for process and attach
 pid, err := native.WaitFor(waitFor)
 if err != nil {
     return err
 }
 
-// 附加到目标进程
+// Attach to target process
 target, err := native.Attach(pid, nil)
 if err != nil {
     return err
 }
 ```
 
-### 总结
+### Summary
 
-WaitFor 机制为调试场景中的进程附加提供了可靠的方式。它确保我们只附加到实际运行的进程，并在如何识别目标进程方面提供了灵活性。该实现高效且与调试器的其他功能良好集成。
+The WaitFor mechanism provides a reliable way to attach to processes in debugging scenarios. It ensures we only attach to actually running processes and provides flexibility in how we identify target processes. The implementation is efficient and well-integrated with other debugger features.
 
-### 参考资料
+### References
 
-1. Linux `/proc` 文件系统文档
-2. Go 标准库 `os` 包文档
-3. 调试器源码 `pkg/proc/native` 包 
+1. Linux `/proc` filesystem documentation
+2. Go standard library `os` package documentation
+3. Debugger source code `pkg/proc/native` package 

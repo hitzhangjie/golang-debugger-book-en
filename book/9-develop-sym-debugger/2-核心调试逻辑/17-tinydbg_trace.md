@@ -1,8 +1,8 @@
 ## Trace
 
-### 实现目标
+### Implementation Goals
 
-trace命令用于对目标进程进行系统调用、信号或特定事件的跟踪，适合性能分析、异常检测和安全审计等场景。本节介绍 `trace` 命令的实现。
+The trace command is used to track system calls, signals, or specific events of the target process, suitable for performance analysis, anomaly detection, and security auditing scenarios. This section introduces the implementation of the `trace` command.
 
 ```bash
 $ tinydbg help trace
@@ -31,27 +31,27 @@ Flags:
   ...
 ```
 
-简单介绍下：
-- --exec，启动并跟踪一个可执行程序
-- --follow-calls，默认无限跟踪，加上后限制函数调用fanout函数调用的深度
-- --pid，跟踪已经在运行的进程
-- --output，如果是需要对目标的main module、test package、go源文件进行编译，这里指定输出二进制产物名
-- --stack，trace命令在regexp匹配的各个函数名的入口地址、发你地址都设置了断点，每次执行到这里时，打印堆栈
-- --test，对某个test package进行 `go test -c` 构建并进行测试；
+Brief introduction:
+- --exec, launch and trace an executable program
+- --follow-calls, unlimited tracing by default, limits the depth of function call fanout when specified
+- --pid, trace an already running process
+- --output, specifies the output binary name when compiling the target's main module, test package, or Go source files
+- --stack, trace command sets breakpoints at both entry and exit addresses of functions matching regexp, printing the stack when execution reaches these points
+- --test, build and test a test package using `go test -c`
 
-### 基础知识
+### Basic Knowledge
 
-实现前后端交互命令，这里前后端的大致执行步骤如下：
+To implement frontend-backend interaction commands, here are the general execution steps:
 
-1. 用户在前端输入 `tinydbg trace <pid> [regexp]` 命令。
-2. 前端通过 json-rpc（远程）或 net.Pipe（本地）将 trace 请求发送给后端。
-3. 后端调用系统API（如 ptrace、eBPF 等）对目标进程进行事件跟踪。
-4. 后端实时收集并上报跟踪事件数据。
-5. 前端展示跟踪结果或保存日志。
+1. User inputs `tinydbg trace <pid> [regexp]` command in the frontend.
+2. Frontend sends the trace request to backend via json-rpc (remote) or net.Pipe (local).
+3. Backend calls system APIs (like ptrace, eBPF, etc.) to track events of the target process.
+4. Backend collects and reports trace event data in real-time.
+5. Frontend displays trace results or saves logs.
 
-这个逻辑很清晰，一起来看看代码是如何实现的。
+This logic is clear, let's see how the code implements it.
 
-#### 流程图
+#### Flow Diagram
 
 ```mermaid
 sequenceDiagram
@@ -62,14 +62,14 @@ sequenceDiagram
     User->>Frontend: trace <pid> [options]
     Frontend->>Backend: json-rpc Trace(pid, options)
     Backend->>OS: ptrace/eBPF trace
-    OS-->>Backend: 事件数据
-    Backend-->>Frontend: 跟踪结果/日志
-    Frontend-->>User: 展示/保存结果
+    OS-->>Backend: Event data
+    Backend-->>Frontend: Trace results/logs
+    Frontend-->>User: Display/save results
 ```
 
-### 代码实现
+### Code Implementation
 
-#### 客户端发出去Trace请求
+#### Client Sends Trace Request
 
 ```go
 godbg trace [flags] [args]
@@ -83,7 +83,7 @@ godbg trace [flags] [args]
                     \--> for each fn in functions, create entry/finish breakpoint with loadargs set
 ```
 
-下面看下traceCmd源码：
+Let's look at the traceCmd source code:
 
 ```go
 func traceCmd(cmd *cobra.Command, args []string, conf *config.Config) int {
@@ -172,9 +172,9 @@ func traceCmd(cmd *cobra.Command, args []string, conf *config.Config) int {
 }
 ```
 
-#### 服务器接收、处理逻辑
+#### Server Receives and Processes Logic
 
-然后再来看看服务器端的处理逻辑。
+Now let's look at the server-side processing logic.
 
 ```bash
 godbg listenAndServe(conn)
@@ -191,7 +191,7 @@ godbg listenAndServe(conn)
             if loadargs set, then print `args` and `locals`
 ```
 
-展开看的话，关键代码如下：
+Expanding the key code:
 
 ```go
 // ListFunctions lists all functions in the process matching filter.
@@ -203,12 +203,10 @@ func (s *RPCServer) ListFunctions(arg ListFunctionsIn, out *ListFunctionsOut) er
 	out.Funcs = fns
 	return nil
 }
-
 ```
 
-关于CreateBreakpoint和Continue，我们还是等到介绍相关内容时再进行介绍吧，这里先选择性跳过，免得重复进行描述。
+Regarding CreateBreakpoint and Continue, we'll skip them for now to avoid repetition, and we'll cover them when discussing related content.
 
+### Summary
 
-### 本文小结
-
-trace 命令通过集成系统级跟踪能力，为性能分析和异常检测提供了强大工具，支持多种事件类型和灵活的输出方式。 
+The trace command provides a powerful tool for performance analysis and anomaly detection by integrating system-level tracing capabilities, supporting multiple event types and flexible output methods. 

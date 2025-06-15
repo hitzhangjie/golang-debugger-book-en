@@ -1,105 +1,105 @@
-# 分离式DWARF数据的工作原理
+# How Separate DWARF Data Works
 
-## 概述
+## Overview
 
-DWARF（Debugging With Attributed Record Formats）是一种广泛使用的调试数据格式，它提供了关于程序结构、变量和执行流程的详细信息。在Linux/AMD64平台上，调试信息通常直接嵌入在ELF文件本身中，但在某些平台和构建配置中，DWARF数据可能会被单独存储。
+DWARF (Debugging With Attributed Record Formats) is a widely used debugging data format that provides detailed information about program structure, variables, and execution flow. On Linux/AMD64 platforms, debug information is typically embedded directly in the ELF file itself, but on some platforms and build configurations, DWARF data may be stored separately.
 
-## Linux/AMD64平台
+## Linux/AMD64 Platform
 
-在Linux/AMD64系统上，调试信息通常直接存储在ELF（Executable and Linkable Format）文件中。这是最常见和最直接的方法，其中：
+On Linux/AMD64 systems, debug information is usually stored directly in the ELF (Executable and Linkable Format) file. This is the most common and straightforward approach, where:
 
-1. 调试信息在构建过程中被编译到二进制文件中
-2. DWARF数据存储在ELF文件的特殊节中（例如：`.debug_info`、`.debug_line`、`.debug_abbrev`）
-3. 调试器可以直接访问这些信息，无需定位单独的文件
+1. Debug information is compiled into the binary during the build process
+2. DWARF data is stored in special sections of the ELF file (e.g., `.debug_info`, `.debug_line`, `.debug_abbrev`)
+3. Debuggers can access this information directly without needing to locate separate files
 
-这种方法对于Linux/AMD64上的大多数开发场景来说既简单又高效。
+This approach is both simple and efficient for most development scenarios on Linux/AMD64.
 
-## 分离式DWARF数据
+## Separate DWARF Data
 
-然而，在某些情况下，调试信息会与主可执行文件分开存储：
+However, in some cases, debug information is stored separately from the main executable:
 
-### 常见场景
+### Common Scenarios
 
-1. **构建系统配置**：某些构建系统被配置为生成单独的调试文件，以减小主二进制文件的大小
-2. **发行版包**：Linux发行版通常会从二进制文件中剥离调试信息，并在单独的调试包中提供
-3. **跨平台开发**：某些平台或工具链可能由于其架构或构建系统设计而需要单独的调试文件
+1. **Build System Configuration**: Some build systems are configured to generate separate debug files to reduce the size of the main binary
+2. **Distribution Packages**: Linux distributions typically strip debug information from binaries and provide it in separate debug packages
+3. **Cross-Platform Development**: Some platforms or toolchains may require separate debug files due to their architecture or build system design
 
-### 实现细节
+### Implementation Details
 
-当调试信息被单独存储时，通常遵循以下模式：
+When debug information is stored separately, it typically follows these patterns:
 
-1. **调试包命名**：单独的调试文件通常遵循以下命名约定：
+1. **Debug Package Naming**: Separate debug files usually follow these naming conventions:
    - `binary.debug`
    - `binary.dbg`
-   - `binary.dwo`（用于分离的DWARF对象）
+   - `binary.dwo` (for split DWARF objects)
 
-2. **位置约定**：调试文件可能存储在：
-   - 与可执行文件相同的目录
-   - 专用调试目录（例如：`/usr/lib/debug/`）
-   - 构建特定的调试目录
+2. **Location Conventions**: Debug files may be stored in:
+   - The same directory as the executable
+   - Dedicated debug directories (e.g., `/usr/lib/debug/`)
+   - Build-specific debug directories
 
-3. **文件格式**：单独的调试文件通常是：
-   - 仅包含调试节的ELF文件
-   - 特定于平台的专用调试文件格式
+3. **File Format**: Separate debug files are typically:
+   - ELF files containing only debug sections
+   - Platform-specific dedicated debug file formats
 
-## 为什么Linux/AMD64不需要特殊处理
+## Why Linux/AMD64 Doesn't Need Special Handling
 
-在Linux/AMD64上，将调试信息嵌入ELF文件的标准方法就足够了，因为：
+On Linux/AMD64, the standard method of embedding debug information in ELF files is sufficient because:
 
-1. ELF格式得到良好支持和标准化
-2. 如果需要，可以使用`strip`等工具轻松剥离调试信息
-3. 平台的工具链和调试器支持成熟且全面
-4. 嵌入调试信息的开销通常是可以接受的
+1. ELF format is well-supported and standardized
+2. Debug information can be easily stripped using tools like `strip` if needed
+3. Platform toolchain and debugger support is mature and comprehensive
+4. The overhead of embedded debug information is usually acceptable
 
-## 何时考虑使用分离的调试文件
+## When to Consider Separate Debug Files
 
-虽然对Linux/AMD64来说不是必需的，但在以下情况下可能值得考虑使用分离的调试文件：
+While not necessary for Linux/AMD64, separate debug files might be worth considering in these cases:
 
-1. **二进制大小至关重要**：当主二进制文件需要尽可能小时
-2. **跨平台开发**：当目标平台需要分离的调试文件时
-3. **发行要求**：当遵循特定于平台的发行指南时
-4. **构建系统约束**：当使用强制分离调试文件的构建系统时
+1. **Binary Size is Critical**: When the main binary needs to be as small as possible
+2. **Cross-Platform Development**: When target platforms require separate debug files
+3. **Distribution Requirements**: When following platform-specific distribution guidelines
+4. **Build System Constraints**: When using build systems that mandate separate debug files
 
-## tinydbg中的调试信息目录配置
+## Debug Info Directory Configuration in tinydbg
 
-在tinydbg中，通过`debug-info-directories`配置项可以指定额外的调试信息搜索路径。这个配置的工作方式如下：
+In tinydbg, additional debug information search paths can be specified through the `debug-info-directories` configuration. Here's how this configuration works:
 
-1. **配置格式**：
-   - 可以配置多个目录路径
-   - 路径之间使用系统特定的分隔符（Linux/Unix系统使用冒号`:`）
-   - 例如：`/usr/lib/debug:/usr/local/lib/debug`
+1. **Configuration Format**:
+   - Multiple directory paths can be configured
+   - Paths are separated by system-specific separators (colon `:` for Linux/Unix systems)
+   - Example: `/usr/lib/debug:/usr/local/lib/debug`
 
-2. **搜索机制**：
-   - 当调试器需要查找调试信息时，会按照以下顺序搜索：
-     1. 首先在ELF文件内部查找（对于Linux/AMD64平台）
-     2. 如果内部没有找到，则遍历`debug-info-directories`中配置的所有目录
-     3. 在每个目录中，根据可执行文件的路径构建对应的调试文件路径
+2. **Search Mechanism**:
+   - When the debugger needs to find debug information, it searches in this order:
+     1. First inside the ELF file (for Linux/AMD64 platforms)
+     2. If not found internally, iterate through all directories in `debug-info-directories`
+     3. In each directory, construct corresponding debug file paths based on the executable's path
 
-3. **路径构建规则**：
-   - 对于给定的可执行文件路径，调试器会：
-     1. 提取可执行文件的完整路径
-     2. 在配置的目录中查找相同路径的文件
-     3. 如果找到匹配的文件，则尝试从中读取调试信息
+3. **Path Construction Rules**:
+   - For a given executable path, the debugger will:
+     1. Extract the full path of the executable
+     2. Look for matching files in configured directories
+     3. Attempt to read debug information if a match is found
 
-4. **实际应用示例**：
+4. **Practical Example**:
    ```
-   可执行文件路径：/usr/bin/program
-   调试信息目录：/usr/lib/debug
-   最终查找路径：/usr/lib/debug/usr/bin/program.debug
+   Executable path: /usr/bin/program
+   Debug info directory: /usr/lib/debug
+   Final lookup path: /usr/lib/debug/usr/bin/program.debug
    ```
 
-5. **配置建议**：
-   - 对于Linux/AMD64平台，通常不需要配置此选项
-   - 在需要支持其他平台或特殊构建配置时，可以添加相应的调试信息目录
-   - 建议将常用的调试信息目录添加到配置中，以提高调试效率
+5. **Configuration Recommendations**:
+   - For Linux/AMD64 platforms, this option typically isn't needed
+   - Add appropriate debug info directories when supporting other platforms or special build configurations
+   - Consider adding commonly used debug info directories to improve debugging efficiency
 
-## 结论
+## Conclusion
 
-虽然分离式DWARF数据处理对Linux/AMD64平台来说不是必需的，但了解它的工作原理对于以下方面很重要：
+While separate DWARF data handling isn't necessary for Linux/AMD64 platforms, understanding how it works is important for:
 
-1. 跨平台开发
-2. 使用不同的构建系统
-3. 理解各种环境中的调试信息管理
-4. 支持需要分离调试文件的平台
+1. Cross-platform development
+2. Working with different build systems
+3. Understanding debug information management in various environments
+4. Supporting platforms that require separate debug files
 
-选择嵌入式还是分离式调试信息应该基于开发环境和目标平台的具体要求。 
+The choice between embedded or separate debug information should be based on the specific requirements of your development environment and target platform.

@@ -1,15 +1,15 @@
 ## Debug
 
-### 实现目标: `tinydbg debug ./path-to`
+### Implementation Goal: `tinydbg debug ./path-to`
 
-attach操作是对一个已经运行的程序进行调试，或者--waitfor等待一个程序运行起来后进行调试。exec是对一个已经编译构建好的go可执行程序进行调试。debug则是对源代码的main package先进行编译，然后再执行类似exec的逻辑。go build这么简单的事情，为什么要多搞一个debug操作出来呢？
+The attach operation is used to debug a program that is already running, or to wait for a program to start running using --waitfor before debugging. The exec operation is used to debug a compiled Go executable. The debug operation first compiles the source code's main package and then executes logic similar to exec. Why create a separate debug operation when go build is so simple?
 
-从实现上来说，debug确实没有比exec多出太多编码工作，它主要是简化大家的调试体验：
-1）软件调试依赖调试信息生成，我们必须告知编译器生成调试信息，而且要对所有用到的modules；
-2）编译器会对代码进行优化，如函数内联等，调试信息生成时如果没有照顾到这种情况，调试也会有问题，所以一般还会禁用内联；
-通常需要这样指定编译选项，`go build -gcflags 'all=-N -l'` 这个命令是不是也没那么好敲？
+From an implementation perspective, debug doesn't require much more coding work than exec. Its main purpose is to simplify the debugging experience:
+1) Software debugging relies on debug information generation. We must tell the compiler to generate debug information, and this applies to all modules used;
+2) The compiler optimizes code, such as function inlining. If debug information generation doesn't account for these optimizations, debugging can be problematic, so inlining is typically disabled;
+Usually, you need to specify compilation options like this: `go build -gcflags 'all=-N -l'` - isn't this command a bit cumbersome to type?
 
-debug就是一个简化上述操作流的命令，我们一起来看下：
+The debug command simplifies this workflow. Let's take a look:
 
 ```bash
 $ tinydbg help debug
@@ -44,15 +44,15 @@ Global Flags:
       --wd string                        Working directory for running the program.
 ```
 
-因为这里涉及到编译这个动作，`go build --tags=?` 支持对特定buildtag的源码进行编译，所以debug操作也需要增加一个选项 `--build-tags=` 来与之配合。其他选项我们前面都介绍过。
+Since compilation is involved here, and `go build --tags=?` supports compiling source code with specific build tags, the debug operation also needs an option `--build-tags=` to work with it. We've covered the other options earlier.
 
-### 基础知识
+### Basic Knowledge
 
-debug操作主要，主要就是为了保证编译时能够传递正确的编译选项，以保证编译器链接器能够生成DWARF调试信息，从而使我们顺利的进行调试。
+The debug operation mainly ensures that the correct compilation options are passed during compilation to guarantee that the compiler and linker generate DWARF debug information, enabling smooth debugging.
 
-没有其他特殊的。OK，我们来看下代码实现。
+Nothing else is particularly special. OK, let's look at the code implementation.
 
-### 代码实现
+### Code Implementation
 
 ```bash
 main.go:main.main
@@ -64,27 +64,27 @@ main.go:main.main
                                     \--> server := rpccommon.NewServer(...)
                                     \--> server.Run()
                                             \--> debugger, _ := debugger.New(...)
-                                                if attach 启动方式: debugger.Attach(...)
-                                                elif core 启动方式：core.OpenCore(...)
-                                                else 其他 debuger.Launch(...)
+                                                if attach startup: debugger.Attach(...)
+                                                elif core startup: core.OpenCore(...)
+                                                else others: debugger.Launch(...)
                                             \--> c, _ := listener.Accept() 
                                             \--> serveConnection(conn)
 ```
 
-构建可执行程序的操作如下，这个函数其实是支持对main module和test package执行构建的（isTest），只不过我们的demo tinydbg希望尽可能简化，而tinydbg debug、tinydbg test的不同之处也仅仅在此而已，所以我们demo tinydbg中移除了test命令。
+The operation to build the executable is as follows. This function actually supports building both main modules and test packages (isTest), but our demo tinydbg aims to be as simple as possible, and the only difference between tinydbg debug and tinydbg test is this, so we removed the test command from our demo tinydbg.
 
 ```go
 func buildBinary(cmd *cobra.Command, args []string, isTest bool) (string, bool) {
-    // 确定构建产物的文件名：
-    // main module，go build 产物为 __debug_bin
-    // test package，用了go test -c的文件名方式
+    // Determine the output filename:
+    // main module, go build output is __debug_bin
+    // test package, uses go test -c filename method
 	if isTest {
 		debugname = gobuild.DefaultDebugBinaryPath("debug.test")
 	} else {
 		debugname = gobuild.DefaultDebugBinaryPath("__debug_bin")	
     }
 
-    // 执行构建操作 go build or go test -c, 带上合适的编译选项
+    // Execute build operation go build or go test -c, with appropriate compilation options
 	err = gobuild.GoBuild(debugname, args, buildFlags)
 	if err != nil {
 		if outputFlag == "" {
@@ -104,12 +104,12 @@ func GoBuild(debugname string, pkgs []string, buildflags string) error {
 }
 ```
 
-debug命令，在正常完成构建后，接下来和exec命令一样执行debugger.Launch(...)，完成进程启动前的ALSR相关的设置、然后对Fork后子进程PTRACEME相关的设置，然后启动进程，进程启动后继续完成必要的初始化动作，如读取二进制文件的信息，通过ptrace设置将已经启动的线程和未来可能创建的线程全部管控起来。这里我们就这样简单总结一下，不详细展开了。
+After the debug command successfully completes the build, it executes debugger.Launch(...) just like the exec command, completing ASLR-related settings before process startup, then setting up PTRACEME-related configurations for the forked child process, and finally starting the process. After the process starts, it continues with necessary initialization actions, such as reading binary file information and using ptrace to control all existing threads and any threads that may be created in the future. We'll summarize it briefly here without going into too much detail.
 
-### 执行测试
+### Testing
 
-略
+Skipped
 
-### 本文总结
+### Summary
 
-本文介绍了`tinydbg debug`命令的实现原理和使用方法。该命令的主要目的是简化Go程序的调试流程，通过自动添加必要的编译选项（如`-gcflags 'all=-N -l'`）来确保生成正确的调试信息、禁用内联优化。debug命令首先会编译源代码（如果有buildtags控制也支持通过 `--build-tags` 进行控制）然后执行类似exec的初始化逻辑，初始化debugger启动并attach到进程、管控进程下线程，以及初始化调试器的网络层通信。
+This article introduced the implementation principles and usage methods of the `tinydbg debug` command. The main purpose of this command is to simplify the Go program debugging process by automatically adding necessary compilation options (such as `-gcflags 'all=-N -l'`) to ensure correct debug information generation and disable inlining optimizations. The debug command first compiles the source code (supporting build tags control through `--build-tags` if needed) and then executes initialization logic similar to exec, initializing the debugger to start and attach to the process, control process threads, and initialize the debugger's network layer communication.

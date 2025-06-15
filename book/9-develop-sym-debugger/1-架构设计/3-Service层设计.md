@@ -1,40 +1,40 @@
-## Service层设计
+## Service Layer Design
 
 <img alt="arch" src="assets/debugger-arch.png" width="700px" />
 
-调试器前后端分离式架构，调试器的前端和后端需要通过service层进行通信。尽管调试器调试存在本地调试、远程调试两种类型，但是从架构设计上来看，后端都是希望以API调用的方式来处理请求、响应。
+In the frontend-backend separation architecture of the debugger, the frontend and backend need to communicate through the service layer. Although there are two types of debugging: local debugging and remote debugging, from an architectural design perspective, the backend always hopes to handle requests and responses in the form of API calls.
 
-远程调试场景下，前端、后端是以C/S协议请求方式来交互，后端自然是以API调用的方式来提供服务的；对于本地调试场景下，为了实现架构上的优雅统一，此时进程内逻辑会一分为二，一部分是前端逻辑，一部分是后端逻辑，它们之间通过net.Pipe进行协议通信。
+In remote debugging scenarios, the frontend and backend interact using a C/S protocol request method, and the backend naturally provides services in the form of API calls; for local debugging scenarios, to achieve architectural elegance and unification, the in-process logic is split into two parts: one part is the frontend logic, and the other is the backend logic. They communicate via net.Pipe using a protocol.
 
-- 远程调试，通过真正的C/S网络通信来完成调试请求发送、处理、响应，为了简化收包、解包、编解码、序列化的问题，我们可以直接使用go标准库提供的JSON-RPC实现来完成调试器前后端的网络通信；
-- 本地调试，在net.Pipe基础上实现一个 `preConnectedListener`，它实现了net.Listener接口，这样可以通过统一的Accept操作来完成前端、后端连接的建立；
+- Remote debugging is accomplished through real C/S network communication to send, process, and respond to debugging requests. To simplify packet receiving, unpacking, encoding/decoding, and serialization, we can directly use the JSON-RPC implementation provided by the Go standard library to complete the network communication between the debugger frontend and backend.
+- Local debugging is implemented by creating a `preConnectedListener` based on net.Pipe, which implements the net.Listener interface, so that the connection between the frontend and backend can be established through a unified Accept operation.
 
-这样整个service层的通信接口就可以统一用网络层的通信接口来完成连接建立，进而统一通过API调用的方式来完成请求发送、处理、响应，整体代码处理逻辑就非常优雅，接下来会详细介绍。
+In this way, the entire service layer's communication interface can be unified using the network layer's communication interface to establish connections, and then unified through API calls to send, process, and respond to requests, making the overall code logic very elegant. The following will provide a detailed introduction.
 
-### 远程调试：JSON-RPC over network
+### Remote Debugging: JSON-RPC over network
 
-概要设计中提到了远程调试情况下，调试器前后端需要通过网络进行通信，我们采用json-rpc的方式来实现前后端的通讯。远程调试情况下，调试器前后端service层的设计如下。
+As mentioned in the overview design, in remote debugging scenarios, the frontend and backend of the debugger need to communicate over the network. We use JSON-RPC to implement communication between the frontend and backend. The service layer design for remote debugging is as follows.
 
 <p align="center">
 <img alt="service-jsonrpc" src="assets/service-jsonrpc.png" />
 </p>
 
-RPC是client/server架构设计中常见的一种通讯模式，它的理念是让client端能够像本地方法调用一样来完成对服务端同名接口处理函数的请求，底层的服务发现、频控、熔断、序列化、编解码、网络通讯等细节全部在桩代码以及更底层的框架中予以解决。
+RPC is a common communication pattern in client/server architecture design. Its philosophy is to allow the client to request the server's interface handler functions as if calling local methods, while the underlying details such as service discovery, rate limiting, circuit breaking, serialization, encoding/decoding, and network communication are all handled in the stub code and lower-level frameworks.
 
-我们希望让调试器前后端通过RPC方式来通讯，这对以后我们扩展协议、简化编码复杂度很有价值，而我们又不希望额外引入GRPC等这么种重的框架，该怎么办呢？go标准库对http、json-rpc提供了很好的支持，我们在标准库基础上完成json-rpc通讯。当然了，如果client、server运行在相同host上时，也可以考虑基于UnixConn进行通信。
+We hope to enable the debugger frontend and backend to communicate via RPC, which is valuable for future protocol extensions and simplifying coding complexity. However, we do not want to introduce heavy frameworks like GRPC. What should we do? The Go standard library provides good support for http and JSON-RPC, so we can implement JSON-RPC communication based on the standard library. Of course, if the client and server run on the same host, UnixConn-based communication can also be considered.
 
-> 在本书配套的调试器实现demo中，网络通讯、RPC是实现前后端分离式架构的基础，但是并不是实现go符号级调试器最困难的部分。
+> In the demo implementation of the debugger that accompanies this book, network communication and RPC are the foundation for implementing the frontend-backend separation architecture, but they are not the most difficult part of implementing a Go symbol-level debugger.
 >
-> 作者假定读者朋友已经掌握了RPC相关的知识，因此不会在本书正文部分对相关内容进行大篇幅的介绍。如您对相关内容感兴趣，可以自行从网络上检索相关资料。
+> The author assumes that readers are already familiar with RPC-related knowledge, so this book will not provide a lengthy introduction to these topics. If you are interested, you can search for relevant materials online.
 
-### 本地调试：JSON-RPC over net.Pipe
+### Local Debugging: JSON-RPC over net.Pipe
 
-本地调试时调试器前后端该如何通讯呢？我们熟知的进程间通信手段有很多，比如pipe、fifo、shm等。而在go程序中，goroutines之间通讯广泛采用通信串行处理的思想（Communicating Sequential Processes，简称CSP），即通过chan通信。
+How should the frontend and backend of the debugger communicate during local debugging? We are familiar with many inter-process communication methods, such as pipe, fifo, shm, etc. In Go programs, communication between goroutines widely adopts the idea of Communicating Sequential Processes (CSP), i.e., communication via channels.
 
-go标准库在chan的基础上封装了net.pipe，net.pipe内部包含了两个chan，分别用于读操作（readonly）和写操作（writeonly）：
+The Go standard library encapsulates net.pipe based on channels. net.pipe internally contains two channels, one for read operations (readonly) and one for write operations (writeonly):
 
-- rdRx，只可读的chan，用来读取管道另一端发送的数据；
-- rdTx，只可写的chan，用来向管道另一端发送数据；
+- rdRx, a read-only channel, used to read data sent from the other end of the pipe;
+- rdTx, a write-only channel, used to send data to the other end of the pipe;
 
 ```go
 type pipe struct {
@@ -59,7 +59,7 @@ type pipe struct {
 }
 ```
 
-`net.Pipe() (Conn, Conn)`个函数，则会为我们准备好这样一条全双工的管道，并返回两个net.Conn实例，其实就是net.pipe，然后我们就可以通过net.Conn的Read、Write函数像进行网络操作一样实现同一进程内的全双工通信了。
+The function `net.Pipe() (Conn, Conn)` prepares such a full-duplex pipe for us and returns two net.Conn instances, which are actually net.pipe. We can then use the Read and Write functions of net.Conn to implement full-duplex communication within the same process as if performing network operations.
 
 ```go
 // Pipe creates a synchronous, in-memory, full duplex
@@ -93,28 +93,28 @@ func Pipe() (Conn, Conn) {
 }
 ```
 
-所以设计图上来看，通过net.Pipe进行通信，与通过json-rpc通讯时的差异并不是很明显。具体差异主要体现在，它不走网络，也不需要走http协议。这样统一于net.Conn的通信操作，使得我们在编码实现调试器前后端通讯时会更清晰简洁。
+So, from the design diagram, communication via net.Pipe is not very different from communication via JSON-RPC. The main difference is that it does not go through the network or the HTTP protocol. This unification of communication operations on net.Conn makes the implementation of frontend-backend communication in the debugger clearer and simpler.
 
 <p align="center">
 <img alt="service-pipelistener" src="assets/service-pipelistener.png" />
 </p>
 
-然后，我们需要再考虑下面几个问题，net.Pipe()虽然返回了net.Conn供我们进行全双工通信，但是：
+Next, we need to consider the following issues. Although net.Pipe() returns net.Conn for full-duplex communication:
 
-- 服务端往往是先创建net.Listener然后Accept客户端连接请求才能创建net.Conn；
+- The server usually creates a net.Listener and then Accepts client connection requests to create net.Conn;
 
-  我们可以创建一个实现了net.Listener接口的新类型preconnectedListener，其内部保存 `net.Pipe() (Conn, Conn)`返回的一个net.Conn，每当调用Accept的时候直接返回该保存的net.Conn即可。
-- 客户端往往是通过net.Dial然后才能创建net.Conn；
+  We can create a new type preconnectedListener that implements the net.Listener interface and internally holds one of the net.Conn returned by `net.Pipe() (Conn, Conn)`. Each time Accept is called, it directly returns the stored net.Conn.
+- The client usually creates net.Conn via net.Dial;
 
-  `net.Pipe() (Conn, Conn)`，其返回的另一个Conn作为client的net.Dial的net.Conn，client就不用net.Dial来创建连接了。
+  The other Conn returned by `net.Pipe() (Conn, Conn)` serves as the net.Conn for the client's net.Dial, so the client does not need to use net.Dial to create a connection.
 
-这样，当本地调试时，我们就不通过 `net.Listen(network, address)`而是通过 `net.ListenerPipe()`来返回preconnectedListener来作为net.Listener即可。
+Thus, for local debugging, instead of using `net.Listen(network, address)`, we use `net.ListenerPipe()` to return preconnectedListener as net.Listener.
 
-### 有哪些RPC要支持
+### What RPCs Need to Be Supported
 
-前端UI层设计中我们列出了一些调试命令，包括启动调试的一些子命令 `attach exec debug trace ...`，还有一些调试会话中的交互式命令 `breakpoint continue step print ...`。这些调试命令执行时，调试器前端会调用对应的调试器后端的1个API接口或者多个相关的API接口，来请求调试器后端完成响应处理。
+In the frontend UI layer design, we listed some debugging commands, including subcommands for starting debugging such as `attach exec debug trace ...`, as well as interactive commands in the debugging session such as `breakpoint continue step print ...`. When these debugging commands are executed, the debugger frontend will call one or more corresponding API interfaces of the debugger backend to request the backend to complete the response processing.
 
-以下Client接口定义，体现了调试器需要暴露给客户端调用的一些方法，每个Client接口方法都是一个方法调用约定，对应的有调试器后端的实现、调试器前端的桩代码调用。调试器前端接收并执行某个调试命令时，调用client的1个或者多个方法，并结合一些前端的计算、转换、展示，最终实现该调试命令。
+The following Client interface definition reflects some methods that the debugger needs to expose for client calls. Each Client interface method is a method call convention, with corresponding backend implementations and frontend stub code calls. When the debugger frontend receives and executes a debugging command, it calls one or more client methods, combines some frontend calculations, conversions, and displays, and finally implements the debugging command.
 
 ```go
 // Client represents a client of a debugger service. All client methods are synchronous.
@@ -320,10 +320,10 @@ type Client interface {
 }
 ```
 
-您现在开始感到了惊讶，怎么需要这么多接口？如果我们是做个玩具，那它会相对来说比较简单；如果我们是做个达到可用水准的工具，它就没那么简单了。上述接口 `go-delve/delve` 都已经实现，在我们的demo调试器中，由于篇幅原因，我们只会讲述哪些最核心的接口的实现，其他的接口读者可以自行实现，或者参考下delve的实现。
+Now you may be surprised: why are so many interfaces needed? If we were making a toy, it would be relatively simple; if we were making a tool of usable quality, it would not be so simple. All the above interfaces have already been implemented in `go-delve/delve`. In our demo debugger, due to space limitations, we will only discuss the implementation of the most core interfaces. Readers can implement the others themselves or refer to delve's implementation.
 
-### 本节小结
+### Section Summary
 
-本节介绍了调试器前后端分离式架构下Service层的设计，包括了远程调试、本地调试时的的详细设计说明，最后也给出了我们要支持的RPC接口列表，换言之我们接下来的任务就是围绕着在前后端去实现这些RPC接口列表。
+This section introduced the design of the Service layer in the frontend-backend separation architecture of the debugger, including detailed design descriptions for both remote and local debugging, and finally provided the list of RPC interfaces we need to support. In other words, our next task is to implement these RPC interface lists on the frontend and backend.
 
-> ps: 与调试器进行交互，除了通过调试器前端显示输入调试命令，还需要一些更友好的方式，比如希望将当前调试会话进行保存，后面从这里继续进行调试。或者希望将一个完整的调试过程分享给其他人一起协助定位问题。go-delve/delve 允许用户通过编写starlark脚本的方式来完成这个操作，调试器会话内通过 `source /path-to/your.star` 来自动执行脚本中的调试操作，这个是非常方便的。starlark脚本中可以执行dlv预先支持好的一些函数，如 `dlv_command("会话中的调试命令")` 来执行调试命令，最终还是会转换成通过API调用的方式去调用调试器后端中的实现逻辑。作为调试器交互逻辑的补充，这里我们简单提一下，我们后面会对此进行详细介绍。
+> ps: In addition to interacting with the debugger by entering debugging commands in the frontend, more user-friendly methods are also needed. For example, you may want to save the current debugging session and continue debugging from here later, or share a complete debugging process with others to help locate problems. go-delve/delve allows users to do this by writing starlark scripts. Within the debugger session, you can automatically execute debugging operations in the script via `source /path-to/your.star`, which is very convenient. The starlark script can execute some functions pre-supported by dlv, such as `dlv_command("debugging command in the session")` to execute debugging commands, which will eventually be converted into API calls to invoke the implementation logic in the debugger backend. As a supplement to the debugger interaction logic, we briefly mention it here and will introduce it in detail later.

@@ -1,105 +1,105 @@
 ## Guess SubstitutePath Automatically
 
-在调试过程中，源代码路径映射是一个重要的问题。本文详细解释 Delve 调试器中的 substitutePath 功能是如何工作的。
+During the debugging process, source code path mapping is an important issue. This article explains in detail how the substitutePath functionality works in the Delve debugger.
 
-### 路径映射的挑战
+### Path Mapping Challenges
 
-在调试过程中，我们面临两种主要的路径映射挑战：
+During debugging, we face two main path mapping challenges:
 
-#### Go 标准库源码映射
+#### Go Standard Library Source Code Mapping
 
-- **问题**：客户端调试机器上的 Go 源码与服务器上目标程序构建时使用的 Go 源码路径不一致
-- **解决方案**：
-  - 首先检查 Go 版本是否一致
-  - 如果版本不一致，直接不展示源码
-  - 如果版本一致，则尝试进行路径映射
+- **Problem**: The Go source code path on the client debugging machine is inconsistent with the Go source code path used when building the target program on the server
+- **Solution**:
+  - First check if the Go versions match
+  - If versions don't match, disable source code display
+  - If versions match, attempt path mapping
 
-#### 待调试程序源码映射
+#### Debug Program Source Code Mapping
 
-- **问题**：客户端调试机器上的程序源码与目标机器上程序构建时的源码路径不一致
-- **解决方案**：
-  - 尽可能保持源码一致性
-  - 通过模块路径和包路径进行映射
+- **Problem**: The program source code path on the client machine is inconsistent with the source code path used when building the program on the target machine
+- **Solution**:
+  - Maintain source code consistency as much as possible
+  - Map through module paths and package paths
 
-### 映射猜测的工作原理
+### How Mapping Guessing Works
 
-#### 输入参数
+#### Input Parameters
 
 ```go
 type GuessSubstitutePathIn struct {
-    ClientModuleDirectories map[string]string  // 客户端模块目录映射
-    ClientGOROOT           string             // 客户端 Go 安装路径
-    ImportPathOfMainPackage string            // 主包的导入路径
+    ClientModuleDirectories map[string]string  // Client module directory mapping
+    ClientGOROOT           string             // Client Go installation path
+    ImportPathOfMainPackage string            // Main package import path
 }
 ```
 
-#### 核心算法
+#### Core Algorithm
 
-1. **收集信息**：
-   - 从二进制文件中提取所有函数信息
-   - 获取每个函数的包名和编译单元信息
-   - 记录服务器端的 GOROOT 路径
+1. **Information Collection**:
+   - Extract all function information from the binary file
+   - Get package name and compilation unit information for each function
+   - Record the server-side GOROOT path
 
-2. **模块路径分析**：
-   - 对每个函数，分析其所属的包和模块
-   - 建立包名到模块名的映射关系
-   - 排除内联函数的干扰
+2. **Module Path Analysis**:
+   - For each function, analyze its package and module
+   - Establish mapping relationships between package names and module names
+   - Exclude interference from inline functions
 
-3. **路径匹配**：
-   - 使用统计方法确定最可能的路径映射
-   - 设置最小证据数（minEvidence = 10）
-   - 设置决策阈值（decisionThreshold = 0.8）
+3. **Path Matching**:
+   - Use statistical methods to determine the most likely path mapping
+   - Set minimum evidence count (minEvidence = 10)
+   - Set decision threshold (decisionThreshold = 0.8)
 
-4. **生成映射**：
-   - 为每个模块生成服务器端到客户端的路径映射
-   - 处理 GOROOT 的特殊映射
+4. **Mapping Generation**:
+   - Generate server-to-client path mappings for each module
+   - Handle special GOROOT mapping
 
-#### 关键代码逻辑
+#### Key Code Logic
 
 ```go
-// 统计每个可能的服务器端目录
+// Count each possible server-side directory
 serverMod2DirCandidate[fnmod][dir]++
 
-// 当收集到足够的证据时进行决策
+// Make decisions when sufficient evidence is collected
 if n > minEvidence && float64(serverMod2DirCandidate[fnmod][best])/float64(n) > decisionThreshold {
     serverMod2Dir[fnmod] = best
 }
 ```
 
-### 实际应用示例
+### Practical Application Examples
 
-#### Go 标准库映射
-
-```
-服务器端：/usr/local/go/src/runtime/main.go
-客户端：/home/user/go/src/runtime/main.go
-映射：/usr/local/go -> /home/user/go
-```
-
-#### 项目源码映射
+#### Go Standard Library Mapping
 
 ```
-服务器端：/build/src/github.com/user/project/main.go
-客户端：/home/user/project/main.go
-映射：/build/src/github.com/user/project -> /home/user/project
+Server-side: /usr/local/go/src/runtime/main.go
+Client-side: /home/user/go/src/runtime/main.go
+Mapping: /usr/local/go -> /home/user/go
 ```
 
-### 最佳实践
+#### Project Source Code Mapping
 
-1. **版本一致性**：
-   - 确保客户端和目标程序使用相同版本的 Go
-   - 不同版本时直接禁用源码显示
+```
+Server-side: /build/src/github.com/user/project/main.go
+Client-side: /home/user/project/main.go
+Mapping: /build/src/github.com/user/project -> /home/user/project
+```
 
-2. **源码管理**：
-   - 保持客户端和目标程序的源码结构一致
-   - 使用版本控制系统确保源码同步
+### Best Practices
 
-3. **模块路径**：
-   - 正确设置模块路径
-   - 确保客户端模块目录映射准确
+1. **Version Consistency**:
+   - Ensure the client and target program use the same Go version
+   - Disable source code display when versions differ
 
-### 总结
+2. **Source Code Management**:
+   - Maintain consistent source code structure between client and target program
+   - Use version control to ensure source code synchronization
 
-SubstitutePath 功能通过智能分析二进制文件中的调试信息，自动建立服务器端和客户端之间的路径映射关系。这个功能对于远程调试和跨环境调试特别重要，它能够确保调试器正确找到和显示源代码文件。
+3. **Module Path**:
+   - Set module paths correctly
+   - Ensure accurate client module directory mapping
 
-通过合理的配置和源码管理，我们可以充分利用这个功能，提高调试效率。 
+### Summary
+
+The SubstitutePath functionality intelligently analyzes debug information in binary files to automatically establish path mapping relationships between the server and client. This feature is particularly important for remote debugging and cross-environment debugging, as it ensures the debugger correctly locates and displays source code files.
+
+Through proper configuration and source code management, we can fully utilize this functionality to improve debugging efficiency. 
