@@ -1,24 +1,24 @@
 ## How "go build" works
 
-### 基础知识
+### Basic Knowledge
 
-`go build` 这个命令用于完成go程序构建，只要用过go的相信都不陌生，但大家是否有仔细去看过这条命令到底涉及到了哪些操作呢？更甚至有没有仔细看过 `go help build` 都支持哪些选项？和 `go tool compile` 又有什么区别？
+The `go build` command is used to build Go programs, and anyone who has used Go should be familiar with it. But have you ever looked closely at what operations this command involves? Or even examined what options `go help build` supports? And what's the difference between it and `go tool compile`?
 
-OK，我们这里并不是故意挑事，如果运行的一切顺利，有谁会多此一举非得看看它内部是怎么工作的呢，毕竟大家都是学习过编译原理的，对不对？对。但是，我恰恰就遇到过几次事情，强迫我把go源码中的工具链部分研究了下。
+OK, we're not trying to stir up trouble here. If everything runs smoothly, who would bother to look into how it works internally? After all, we've all studied compilation principles, right? Right. However, I've encountered several situations that forced me to study the toolchain part of the Go source code.
 
-故事起因是因为 `go test` 做了些额外生成main函数桩代码、flags解析的工作，当时go1.13调整了一个flags解析顺序的代码，导致我编写的 [微服务框架trpc](https://github.com/Tencent/trpc) 配套的效率工具无法正常工作了。于是我就想知道 `go test` 到底是如何工作的，进而了解到 `go test -v -x -work` 和 `go build -v -x -work` 这几个可以展示编译构建过程、保留构建临时目录及产物的控制选项。这样一点点入手逐渐了解了 `go build` 和 `go test` 的详细执行过程。
+The story began because `go test` does some additional work like generating main function stub code and flags parsing. When Go 1.13 adjusted some flags parsing order code, it caused the efficiency tools I wrote for the [microservice framework trpc](https://github.com/Tencent/trpc) to stop working properly. So I wanted to know how `go test` actually works, and then learned about the `go test -v -x -work` and `go build -v -x -work` options that can show the compilation and build process, and preserve the temporary build directory and artifacts. This led me to gradually understand the detailed execution process of `go build` and `go test`.
 
-这部分内容如果您感兴趣可以参考我的博客或者自己阅读go源码。
+If you're interested in this part, you can refer to my blog or read the Go source code yourself.
 
-- [go源码剖析 - go命令/go build](https://www.hitzhangjie.pro/blog/2020-09-28-go%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90-go%E5%91%BD%E4%BB%A4/#go-build)
-- [go源码剖析 - go命令/go test](https://www.hitzhangjie.pro/blog/2020-09-28-go%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90-go%E5%91%BD%E4%BB%A4/#go-test)
-- [go源码剖析 - go test实现](https://www.hitzhangjie.pro/blog/2020-02-23-go%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90-gotest%E5%AE%9E%E7%8E%B0/)
+- [Go Source Code Analysis - go command/go build](https://www.hitzhangjie.pro/blog/2020-09-28-go%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90-go%E5%91%BD%E4%BB%A4/#go-build)
+- [Go Source Code Analysis - go command/go test](https://www.hitzhangjie.pro/blog/2020-09-28-go%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90-go%E5%91%BD%E4%BB%A4/#go-test)
+- [Go Source Code Analysis - go test implementation](https://www.hitzhangjie.pro/blog/2020-02-23-go%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90-gotest%E5%AE%9E%E7%8E%B0/)
 
-OK，上面几篇文章详细介绍了下 go tool compile 的工作过程，以及go test生成测试用入口桩代码的过程，但是没有提及 go tool asm、pack、link、buildid 在构建过程中的作用。本文主要是想介绍编译工具链中各个工具的协作，而非单一工具具体是如何做的。所以你也可以不看上面几篇文章，而是将重点放在我们关心的这个协作目标上。
+OK, the above articles detail the working process of go tool compile and how go test generates test entry stub code, but they don't mention the roles of go tool asm, pack, link, and buildid in the build process. This article mainly wants to introduce the collaboration between various tools in the compilation toolchain, rather than how a single tool works specifically. So you can skip the above articles and focus on the collaboration goal we care about.
 
-### 示例准备
+### Example Preparation
 
-go提供了完整的编译工具链，运行 `go tool` 命令可以查看到编译器compile、汇编器asm、链接器link、静态库打包工具pack，以及一些其他的工具。本节我们先关注这些，其他的有需要的时候再介绍。
+Go provides a complete compilation toolchain. Running the `go tool` command shows the compiler compile, assembler asm, linker link, static library packaging tool pack, and some other tools. Let's focus on these first, and we'll introduce others when needed.
 
 ```bash
 $ go tool
@@ -42,7 +42,7 @@ trace
 vet
 ```
 
-为了能演示go编译工具链的功能，尽可能让compile、asm、linker、pack这几个工具都能被执行，我们设计如下这个工程实例，详见：[golang-debugger-lessons/30_how_gobuild_works](https://github.com/hitzhangjie/golang-debugger-lessons/tree/master/30_how_gobuild_works) .
+To demonstrate the functionality of the Go compilation toolchain and ensure that compile, asm, linker, and pack tools are all executed, we designed the following project example. See: [golang-debugger-lessons/30_how_gobuild_works](https://github.com/hitzhangjie/golang-debugger-lessons/tree/master/30_how_gobuild_works).
 
 file1: main.go
 
@@ -83,9 +83,9 @@ module xx
 go 1.22.3
 ```
 
-### 执行测试
+### Execution Test
 
-执行构建命令 `go build -v -x -work`，我们介绍下这里用到的这几个选项：
+Execute the build command `go build -v -x -work`. Let's introduce these options:
 
 ```bash
 $ go help build
@@ -104,7 +104,7 @@ and test commands:
 ...
 ```
 
-我们看下go构建过程的输出信息，因为添加了上述几个选项的原因，我们可以看到编译构建过程中执行的各个命令，以及构建临时目录中的产物信息：
+Let's look at the output information of the Go build process. Because we added the above options, we can see the various commands executed during the compilation and build process, as well as the artifact information in the temporary build directory:
 
 ```bash
 $ go build -v -x -work
@@ -179,21 +179,21 @@ cd .
 mv $WORK/b001/exe/a.out xx
 ```
 
-### 构建过程
+### Build Process
 
-上述输出中，我们对感兴趣的工具的执行步骤进行了标记（🚩），简单总结如下：
+In the above output, we've marked (🚩) the execution steps of the tools we're interested in. Here's a simple summary:
 
-1. 准备构建用的临时目录，后续构建产物都在这个临时目录中，我们可以cd到此目录查看，但是因为涉及到mv操作、rm操作，构建结束后某些中间产物会消失；
-2. `go tool asm` 处理汇编源文件main.s，输出汇编文件中定义的函数列表 symabis。如果没有汇编源文件，此步骤会跳过；
-3. `go tool compile` 处理go源文件main.go，输出目标文件，注意compile直接将*.o文件加到了静态库_pkg_.a中；
-4. `go tool asm` 对汇编源文件执行汇编操作，输出目标文件main.o。注意哦，main.go以及其他go文件对应的目标文件加到了静态库_pkg_.a中；
-5. `go tool pack` 将main.o加到静态库文件_pkg_.a中。此时示例module中的源文件都编译、汇编加入_pkg_.a中了；
-6. 准备其他需要链接的目标文件列表，已经编译构建好的go运行时、标准库对应的目标文件，全部写入importcfg.link文件；
-7. `go tool link` 对_pkg_.a以及importcfg.link中记录的go运行时、标准库进行链接操作，完成符号解析、重定位，生成一个可执行程序a.out，同时在其.note.go.buildid写入buildid信息；
-8. 将a.out重命名为module name，这里为xx；
+1. Prepare a temporary directory for building. All build artifacts will be in this temporary directory. We can cd into this directory to check, but because it involves mv and rm operations, some intermediate artifacts will disappear after the build ends;
+2. `go tool asm` processes the assembly source file main.s and outputs the function list symabis defined in the assembly file. If there's no assembly source file, this step will be skipped;
+3. `go tool compile` processes the Go source file main.go and outputs the object file. Note that compile directly adds the *.o file to the static library _pkg_.a;
+4. `go tool asm` performs assembly operations on the assembly source file and outputs the object file main.o. Note that main.go and other Go files' corresponding object files are added to the static library _pkg_.a;
+5. `go tool pack` adds main.o to the static library file _pkg_.a. At this point, all source files in the example module have been compiled, assembled, and added to _pkg_.a;
+6. Prepare a list of other object files that need to be linked, including the pre-compiled Go runtime and standard library object files, all written to the importcfg.link file;
+7. `go tool link` performs linking operations on _pkg_.a and the Go runtime and standard library recorded in importcfg.link, completes symbol resolution and relocation, generates an executable program a.out, and writes buildid information to its .note.go.buildid;
+8. Rename a.out to the module name, which is xx in this case;
 
-至此这个示例模块的构建过程结束。
+At this point, the build process for this example module is complete.
 
-### 本文小节
+### Summary
 
-OK，本文简单介绍了下 `go build` 内部的工作过程，编译器、汇编器、链接器、静态库创建工具、buildid工具，接下来我们还会进一步展开讲下，它们究竟做了什么。但是在我们详细介绍每一个工具的工作之前，我们得把关注点转向它们的最终产物 —— ELF文件。我们得先了解下ELF文件的构成（如节头表、段头表、sections、segments）以及它们的具体作用，了解了这些之后，我们再回头看这些工具是如何协调起来去生成它们的，以及后续其他的工具加载器、调试器又如何利用它们。
+OK, this article briefly introduced the internal working process of `go build`, including the compiler, assembler, linker, static library creation tool, and buildid tool. We'll further explain what each of them does. But before we detail how each tool works, we need to turn our attention to their final product - the ELF file. We need to first understand the composition of ELF files (such as section headers, program headers, sections, segments) and their specific roles. After understanding these, we can look back at how these tools coordinate to generate them, and how subsequent tools like loaders and debuggers utilize them.

@@ -1,21 +1,18 @@
-## pkg debug/elf 应用
+## pkg debug/elf Usage
 
-### 数据类型及关系
+### Data Types and Relationships
 
-标准库提供了package`debug/elf`来读取、解析elf文件数据，相关的数据类型及其之间的依赖关系，如下图所示：
+The standard library provides the package `debug/elf` to read and parse ELF file data. The related data types and their dependencies are shown in the diagram below:
 
 ![debug/elf](assets/gopkg-debug-elf.png)
 
+Simply put, elf.File contains all the information we can obtain from an ELF file. For convenience, the standard library also provides other packages: `debug/gosym` to parse .gosymtab symbol information, `debug/gopclntab` for line table information, and `debug/dwarf` to parse .[z]debug_* debug information.
 
+### Common Operations and Examples
 
-简单讲，elf.File中包含了我们可以从elf文件中获取的所有信息，为了方便使用，标准库又提供了其他package `debug/gosym`来解析.gosymtab符号信息、.gopclntab行号表信息，还提供了`debug/dwarf`来解析.[z]debug_\*调试信息。
+#### Opening an ELF File
 
-
-### 常用操作及示例
-
-#### 打开一个ELF文件
-
-通过命令选项传递一个待打开的elf文件名，然后打开该elf文件，并打印elf.File的结构信息。这里我们使用了一个三方库go-spew/spew，它基于反射实现能够打印出elf.File结构中各个字段的信息，如果字段也是组合类型也会对齐进行递归地展开。
+Pass the ELF file name to open as a command-line argument, then open the ELF file and print the structure information of elf.File. Here we use a third-party library go-spew/spew, which uses reflection to print all fields in the elf.File structure, recursively expanding composite types as well.
 
 ```go
 package main
@@ -43,20 +40,20 @@ func main() {
 }
 ```
 
-运行测试`go run main.go ../testdata/loop`，这个结构非常复杂，为了方便读者查看，我删减了部分内容。
+Run the test with `go run main.go ../testdata/loop`. The structure is very complex, so for readability, some content has been omitted.
 
-不难看出，ELF文件中包含了如下关键信息：
+It is clear that the ELF file contains the following key information:
 
-- FileHeader，即ELF Header；
-- Sections，Sections中每个Section都包含了一个elf.SectionHeader定义，它取自ELF文件中的节头表；
-- Progs，Progs中每个Prog都包含了一个elf.ProgHeader定义，它取自ELF文件中的段头表；
+- FileHeader, i.e., the ELF Header;
+- Sections, where each Section contains an elf.SectionHeader definition, taken from the section header table in the ELF file;
+- Progs, where each Prog contains an elf.ProgHeader definition, taken from the program header table in the ELF file;
 
-elf.NewFile()读取ELF文件内容时根据ELF文件头中的Class类型（未知/32bit/64bit），在后续读取ELF文件内容时会有选择地使用Header32/64、Prog32/64、Section32/64中的类型，不管是32bit还是64bit，最终都赋值到了elf.File中的各个字段中并返回elf.File。
+elf.NewFile() reads the ELF file content and, based on the Class type in the ELF header (unknown/32bit/64bit), selectively uses Header32/64, Prog32/64, Section32/64 types when reading the file. Regardless of 32bit or 64bit, the final values are assigned to the fields in elf.File and returned as elf.File.
 
-通过打印信息，细心的读者会发现：
+From the printed information, careful readers will notice:
 
-- 对于sections，我们可以看到section具体的名称，如.text、.rodata、.data；
-- 对于segments，也可以看到segment具体的类型，如note、load，还有其虚拟地址；
+- For sections, you can see the specific section names, such as .text, .rodata, .data;
+- For segments, you can see the specific segment types, such as note, load, and their virtual addresses;
 
 ```bash
 (*elf.File)(0xc0000ec3c0)({
@@ -111,11 +108,11 @@ elf.NewFile()读取ELF文件内容时根据ELF文件头中的Class类型（未�
 })
 ```
 
-#### 读取文件段头表
+#### Reading the Program Header Table
 
-elf.File中的Progs字段，即为段头表（Program Header Table）。前面示例展示了如何读取ELF文件并打印其结构。在此基础上我们将继续对段头表数据一探究竟。
+The Progs field in elf.File is the Program Header Table. The previous example showed how to read and print the structure of an ELF file. Building on that, let's further explore the program header table data.
 
-现在遍历ELF文件中段头表数据，查看每个段的类型、权限位、虚拟存储器地址、段大小，段中其他数据赞不关心。
+Now, iterate over the program header table data in the ELF file to view each segment's type, permission bits, virtual memory address, and segment size. Other data in the segment is not of concern here.
 
 ```go
 package main
@@ -140,9 +137,9 @@ func main() {
 }
 ```
 
-运行测试`go run main.go ../testdata/loop`，程序输出如下。
+Run the test with `go run main.go ../testdata/loop`. The output is as follows.
 
-我们可以看到各个段的索引编号、段类型、权限位、虚拟存储器地址、段占用内存大小（有的段大小可能大于待加载的数据量大小，如包含.data,.bss的段多出来的就可以给堆）。
+You can see the index number, segment type, permission bits, virtual memory address, and memory size of each segment (some segments may be larger than the data to be loaded, e.g., segments containing .data and .bss may have extra space for the heap).
 
 ```bash
 No.   Type               Flags       VAddr      MemSize
@@ -155,9 +152,9 @@ No.   Type               Flags       VAddr      MemSize
 6     PT_LOOS+84153728   0x2a00      0x0        0
 ```
 
-#### 读取文件节头表
+#### Reading the Section Header Table
 
-只需要遍历file.Sections即可读取节头表信息，注意SectionHeader entry在当前pkg实现中被组织到了每一个elf.Section中。
+Just iterate over file.Sections to read the section header table information. Note that the SectionHeader entry is organized into each elf.Section in the current package implementation.
 
 ```go
 package main
@@ -184,7 +181,7 @@ func main() {
 }
 ```
 
-运行测试`go run main.go ../testdata/loop`，程序会输出如下节头表信息，从中我们可以看到各个section的编号、名称、类型、flags、虚拟地址、偏移量、大小、连接信息，等等。
+Run the test with `go run main.go ../testdata/loop`. The program will output the section header table information, showing the index, name, type, flags, virtual address, offset, size, link info, etc., for each section.
 
 ```bash
 No.   Name                 Type           Flags                     Addr       Offset    Size     Link   Info   AddrAlign   EntSize   FileSize
@@ -216,11 +213,11 @@ No.   Name                 Type           Flags                     Addr       O
 
 ```
 
-#### 读取指定section
+#### Reading a Specific Section
 
-现在我们看下如何读取指定的section的数据，以调试器过程中将使用到的section作为示例是一个不错的注意。读取prog的数据并无二致，本质上也是调用的section reader。
+Now let's see how to read the data of a specific section. Using sections that will be used in the debugger process as examples is a good idea. Reading prog data is no different; essentially, it's also calling the section reader.
 
-**示例1：.text section：**
+**Example 1: .text section:**
 
 ```go
 package main
@@ -244,17 +241,17 @@ func main() {
 }
 ```
 
-运行测试`go run main.go ../testdata/loop`，程序会以16进制形式输出.text section的前32个bytes。
+Run the test with `go run main.go ../testdata/loop`. The program will output the first 32 bytes of the .text section in hexadecimal.
 
 ```bash
 64 48 8b 0c 25 f8 ff ff ff 48 3b 61 10 76 38 48 83 ec 18 48 89 6c 24 10 48 8d 6c 24 10 0f 1f 00
 ```
 
-只是查看一堆16进制数，并没有什么特别大帮助，对于.text节，我们还可以调用反汇编框架将这些指令转换为汇编语言。下面的程序将反汇编前10条指令数据并输出。
+Just looking at a bunch of hex numbers isn't particularly helpful. For the .text section, we can also use a disassembly framework to convert these instructions into assembly language. The following program disassembles and outputs the first 10 instructions.
 
 ```go
 import (
-    ""golang.org/x/arch/x86/x86asm""
+    "golang.org/x/arch/x86/x86asm"
 )
 
 func main() {
@@ -275,11 +272,11 @@ func main() {
 }
 ```
 
-**示例2：.data section：**
+**Example 2: .data section:**
 
-按照相同的方法，我们可以读取.data section的数据，但是下面的程序同样只能打印16进制数，这并没有太大帮助。联想到.text section可以通过反汇编框架进行反汇编（指令编解码是有规律的），我们如何解析这里的数据呢？
+Similarly, we can read the .data section data, but the following program also only prints hex numbers, which isn't very helpful. Recall that the .text section can be disassembled using a disassembly framework (since instruction encoding/decoding is regular), but how do we parse the data here?
 
-这就要用到对go程序类型系统的理解了，比如.data中存储的一个string，或者一个struct，或者一个interface{}，只有对类型系统有了深入的理解，我们才能正确解释这里的数据，并对我们的调试过程提供帮助。
+This requires an understanding of Go's type system. For example, if .data stores a string, a struct, or an interface{}, only with a deep understanding of the type system can we correctly interpret the data here and provide help for our debugging process.
 
 ```go
 func main() {
@@ -292,21 +289,16 @@ func main() {
 }
 ```
 
-直接读写内存数据的场景，往往是我们知道了一个变量的内存地址，既然是变量当然也知道其类型，然后我们再查看并解析该内存地址处的数据，如pmem命令的使用。pmem需要我们手动指定每个元素字节大小才能正确解析。
+Directly reading and writing memory data is often done when we know the memory address of a variable. Since it's a variable, we also know its type, and then we can view and parse the data at that memory address, such as with the pmem command. pmem requires us to manually specify the byte size of each element to parse correctly.
 
-更方便的做法是借助调试符号信息，分析这个符号对应的类型信息，以及在内存中的位置，然后我们再读取内存数据并按照类型进行解析。我们将在debug/dwarf一节开始介绍。
+A more convenient approach is to use debug symbol information, analyze the type information corresponding to the symbol, as well as its location in memory, and then read the memory data and parse it according to the type. We will introduce this in the debug/dwarf section.
 
-本节内容我们介绍了标准库debug/elf的设计并演示了常用操作，我们接下来介绍下debug/gosym包的使用，了解下如何利用go工具链生成的符号、行号信息。
+In this section, we introduced the design of the standard library debug/elf and demonstrated common operations. Next, we'll introduce the use of the debug/gosym package to understand how to utilize the symbol and line number information generated by the Go toolchain.
 
-### 参考内容
+### References
 
 1. How to Fool Analysis Tools, https://tuanlinh.gitbook.io/ctf/golang-function-name-obfuscation-how-to-fool-analysis-tools
-
 2. Go 1.2 Runtime Symbol Information, Russ Cox, https://docs.google.com/document/d/1lyPIbmsYbXnpNj57a261hgOYVpNRcgydurVQIyZOz_o/pub
-
 3. Some notes on the structure of Go Binaries, https://utcc.utoronto.ca/~cks/space/blog/programming/GoBinaryStructureNotes
-
 4. Buiding a better Go Linker, Austin Clements, https://docs.google.com/document/d/1D13QhciikbdLtaI67U6Ble5d_1nsI4befEd6_k1z91U/view
-
-
 5.  Time for Some Function Recovery, https://www.mdeditor.tw/pl/2DRS/zh-hk

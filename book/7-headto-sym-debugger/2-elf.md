@@ -1,27 +1,27 @@
-## 认识ELF文件
+## Understanding ELF Files
 
-ELF ([Executable and Linkable Format](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format))，可执行可链接格式，是Unix、Linux环境下一种十分常见的文件格式，它可用于可执行程序、目标文件、共享库、core文件等。
+ELF ([Executable and Linkable Format](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format)) is a common file format in Unix and Linux environments, used for executable programs, object files, shared libraries, core files, etc.
 
-### ELF文件结构
+### ELF File Structure
 
-ELF文件结构如下图所示，包括ELF文件头 (ELF Header)、段头表 (Program Header Table)、节头表 (Section Header Table)、Sections。Sections位于段头表和节头表之间，并被段头表和节头表引用。
+The ELF file structure is shown in the figure below, including the ELF Header, Program Header Table, Section Header Table, and Sections. Sections are located between the Program Header Table and Section Header Table, and are referenced by both tables.
 
 ![img](assets/elf.png)
 
-* **文件头**：ELF文件头 (ELF FIle Header)，其描述了当前ELF文件的类型（可执行程序、可重定位文件、动态链接文件、core文件等）、32位/64位寻址、ABI、ISA、程序入口地址、Program Header Table起始地址及元素大小、Section Header Table起始地址及元素大小，等等。
-* **段头表**：段头表定义了程序的“**执行时视图**”，描述了如何创建程序的进程映像。每个表项定义了一个“段 (segment)” ，每个段引用了0、1或多个sections。段有类型，如PT_LOAD表示该段引用的sections需要在运行时被加载到内存。段头表主要是为了指导加载器进行加载。
-  举个例子，.text section隶属于一个Type=PT_LOAD的段，意味着会被加载到内存；并且该段的权限为RE（Read+Execute），意味着指令部分加载到内存后，进程对这部分区域的访问权限为“读+可执行”。加载器 (loader /lib64/ld-linux-x86-64.so) 应按照段定义好的虚拟地址范围、权限，将引用的sections加载到进程地址空间中指定位置，并设置好对应的读、写、执行权限（vm_area_struct.vm_flags)。
-* **节头表**：节头表定义了程序的“**链接时视图**”，描述了二进制可执行文件中包含的每个section的位置、大小、类型、链接顺序，等等，主要目的是为了指导链接器进行链接。
-  举个例子，项目包含多个源文件，每个源文件是一个编译单元，每个编译单元最终会生成一个目标文件(*.o)，每个目标文件都是一个ELF文件，都包含自己的sections。链接器是将依赖的目标文件和库文件的相同section进行合并（如所有*.o文件的.text合并到一起），然后将符号引用解析成正确的偏移量或者地址。
-* **Sections**：ELF文件中的sections数据，夹在段头表、节头表之间，由段头表、节头表引用。不同程序中包含的sections数量是不固定的：有些编程语言会有特殊的sections来支持对应的语言运行时层面的功能，如go .gopclntab, gosymtab；程序采用静态链接、动态链接生成的sections也会不同，如动态链接往往会生成.got, .plt, .rel.text。
+* **File Header**: The ELF File Header describes the type of the current ELF file (executable program, relocatable file, dynamic linking file, core file, etc.), 32-bit/64-bit addressing, ABI, ISA, program entry address, Program Header Table start address and element size, Section Header Table start address and element size, etc.
+* **Program Header Table**: The Program Header Table defines the "**execution view**" of the program, describing how to create the process image. Each entry defines a "segment" that references 0, 1, or more sections. Segments have types, such as PT_LOAD indicating that the sections referenced by this segment need to be loaded into memory at runtime. The Program Header Table is mainly used to guide the loader in loading.
+  For example, the .text section belongs to a segment with Type=PT_LOAD, meaning it will be loaded into memory; and the segment's permissions are RE (Read+Execute), meaning that after the instruction part is loaded into memory, the process's access permissions for this area are "read+execute". The loader (/lib64/ld-linux-x86-64.so) should load the referenced sections into the specified location in the process address space according to the virtual address range and permissions defined by the segment, and set the corresponding read, write, and execute permissions (vm_area_struct.vm_flags).
+* **Section Header Table**: The Section Header Table defines the "**linkable view**" of the program, describing the location, size, type, linking order, etc., of each section in the binary executable file, mainly to guide the linker in linking.
+  For example, a project contains multiple source files, each source file is a compilation unit, each compilation unit will eventually generate an object file (*.o), each object file is an ELF file and contains its own sections. The linker merges the same sections from dependent object files and library files (such as merging all *.o files' .text sections together), and then resolves symbol references into correct offsets or addresses.
+* **Sections**: The section data in the ELF file, sandwiched between the Program Header Table and Section Header Table, is referenced by both tables. The number of sections included in different programs is not fixed: some programming languages have special sections to support corresponding language runtime features, such as go .gopclntab, gosymtab; programs using static linking or dynamic linking will generate different sections, such as dynamic linking often generating .got, .plt, .rel.text.
 
-下面，我们我们对每个部分进行详细介绍。
+Below, we will introduce each part in detail.
 
-### 文件头（ELF File Header）
+### File Header (ELF File Header)
 
-#### 类型定义
+#### Type Definition
 
-每个解析成功的ELF文件，对应着go标准库类型 debug/elf.File，包含了文件头 FileHeader、Sections、Progs：
+Each successfully parsed ELF file corresponds to the go standard library type debug/elf.File, which includes the FileHeader, Sections, and Progs:
 
 ```go
 // A File represents an open ELF file.
@@ -46,7 +46,7 @@ type FileHeader struct {
 }
 ```
 
-注意，go标准库FileHeader比man手册中ELF file header少了几个解析期间有用的字段，为了更全面理解文件头各字段的作用，来看下man 手册中的定义：
+Note that the go standard library FileHeader has fewer fields than the ELF file header in the man manual that are useful during parsing. To better understand the role of each field in the file header, let's look at the definition in the man manual:
 
 ```c
 #define EI_NIDENT 16
@@ -74,28 +74,28 @@ typedef struct {
   - EI_MAG1: E
   - EI_MAG2: L
   - EI_MAG3: F
-  - EI_Class: 寻址类型（32位寻址 or 64位寻址）；
-  - EI_Data: 处理器特定的数据在文件中的编码方式（小端还是大端）；
-  - EI_VERSION: ELF规范的版本；
-  - EI_OSABI: 该二进制面向的OS以及ABI（sysv，hpux，netbsd，linux，solaris，irix，freebsd，tru64 unix，arm，stand-alone（embeded）；
-  - EI_ABIVERSION: 该二进制面向的ABI版本（相同OSABI可能有不兼容的多个ABI版本）；
-  - EI_PAD: 这个位置开始到最后EI_NIDENT填充0，读取时要忽略；
-  - EI_NIDENT: e_ident数组长度；
-- e_type: 文件类型（可重定位文件、可执行程序、动态链接文件、core文件等）；
-- e_machine: 机器类型（386，spark，ppc，etc）；
-- e_version: 文件版本；
-- e_entry: 程序入口地址（如果当前文件没有入口地址，就填0）；
-- e_phoff: 段头表相对当前文件开头的偏移量；
-- e_shoff: 节头表相对当前文件开头的偏移量；
-- e_flags: 处理器特定的flags；
-- e_ehsize: ELF文件头部结构体大小；
-- e_phentsize: 段头表中每个条目占用的空间大小；
-- e_phnum: 段头表中的条目数量；
-- e_shentsize: 节头表中每个条目占用的空间大小；
-- e_shnum: 节头表中的条目数量；
-- e_shstrndx: 存储了节名字的节在节头表中的索引 (可能是.strtab或者.shstrtab)；
+  - EI_Class: Addressing type (32-bit or 64-bit addressing);
+  - EI_Data: How processor-specific data is encoded in the file (little-endian or big-endian);
+  - EI_VERSION: Version of the ELF specification;
+  - EI_OSABI: The OS and ABI the binary targets (sysv, hpux, netbsd, linux, solaris, irix, freebsd, tru64 unix, arm, stand-alone (embedded));
+  - EI_ABIVERSION: The ABI version the binary targets (same OSABI may have multiple incompatible ABI versions);
+  - EI_PAD: From this position to the end of EI_NIDENT is filled with 0, should be ignored when reading;
+  - EI_NIDENT: Length of the e_ident array;
+- e_type: File type (relocatable file, executable program, dynamic linking file, core file, etc.);
+- e_machine: Machine type (386, spark, ppc, etc.);
+- e_version: File version;
+- e_entry: Program entry address (if the current file has no entry address, fill with 0);
+- e_phoff: Offset of the Program Header Table relative to the start of the current file;
+- e_shoff: Offset of the Section Header Table relative to the start of the current file;
+- e_flags: Processor-specific flags;
+- e_ehsize: Size of the ELF file header structure;
+- e_phentsize: Size of space occupied by each entry in the Program Header Table;
+- e_phnum: Number of entries in the Program Header Table;
+- e_shentsize: Size of space occupied by each entry in the Section Header Table;
+- e_shnum: Number of entries in the Section Header Table;
+- e_shstrndx: Index of the section storing section names in the Section Header Table (may be .strtab or .shstrtab);
 
-> ps：ELF文件头其他字段都比较容易懂，关于.shstrtab，它的数据存储与.strtab雷同，只是它用来存section名 (man手册显示.strtab除了可以存储符号名，也可以存储Section名)。
+> ps: Other fields in the ELF file header are relatively easy to understand. Regarding .shstrtab, its data storage is similar to .strtab, but it's used to store section names (the man manual shows that .strtab can store both symbol names and section names).
 >
 > **String Table (.strtab section)**
 >
@@ -103,17 +103,17 @@ typedef struct {
 > | ------------ | ------ | ------ | ----- | ----- | ------ | ------ | ------ | ----- | ----- | ----- |
 > | **0**  | `\0` | `n`  | `a` | `m` | `e`  | `.`  | `\0` | `V` | `a` | `r` |
 > | **10** | `i`  | `a`  | `b` | `l` | `e`  | `\0` | `a`  | `b` | `l` | `e` |
-> | **20** | `\0` | `\0` | `x` | `x` | `\0` | ` ` |        |       |       |       |
+> | **20** | `\0` | `\0` | `x` | `x` | `\0` | ` ` |        |       |       |       |
 >
-> 假定有上述.strtab，那么idx=0对应的字符串为none，idx=1的对应着字符串为“name.”，idx=7的对应的字符串为“Variable”。对于.shstrtab，它的存储方式与.strtab相同，但是存储的是所有节的名字，而节的名字在.shstrtab中的索引由Elf32/Elf64_Shdr.s_name来指定。
+> Assuming the above .strtab, then idx=0 corresponds to the string "none", idx=1 corresponds to the string "name.", and idx=7 corresponds to the string "Variable". For .shstrtab, its storage method is the same as .strtab, but it stores the names of all sections, and the index of the section name in .shstrtab is specified by Elf32/Elf64_Shdr.s_name.
 
-### 段头表 (Program Header Table)
+### Program Header Table
 
-段头表 (Program Header Table)，可以理解为程序的执行时视图（executable point of view），主要用来指导loader如何加载。从可执行程序角度来看，进程运行时需要了解如何将程序中不同部分，加载到进程虚拟内存地址空间中的不同区域。Linux下进程地址空间的内存布局，大家并不陌生，如data段、text段，每个段包含的信息其实是由段头表预先定义好的，包括在虚拟内存空间中的位置，以及段中应该包含哪些sections数据，以及它们的读写执行权限。
+The Program Header Table can be understood as the executable point of view of the program, mainly used to guide the loader in loading. From the perspective of an executable program, when the process runs, it needs to know how to load different parts of the program into different areas of the process's virtual memory address space. The memory layout of process address space in Linux is familiar to everyone, such as the data segment and text segment. The information contained in each segment is actually predefined by the Program Header Table, including its position in virtual memory space, which sections data should be included, and their read, write, and execute permissions.
 
-#### 类型定义
+#### Type Definition
 
-段头表当然就是一个数组了，我们看看其中每个“段”的定义：
+The Program Header Table is of course an array. Let's look at the definition of each "segment":
 
 ```c
 typedef struct {
@@ -139,42 +139,42 @@ typedef struct {
 } Elf64_Phdr;
 ```
 
-下面详细解释下，上面两个结构分别是面向32位、64位系统下的结构体，其字段含义如下：
+Below is a detailed explanation of the above two structures, which are for 32-bit and 64-bit systems respectively. The meaning of each field is as follows:
 
-- p_type: 段类型
-  - PT_NULL: 该表想描述了一个undefined的段，可以忽略；
-  - PT_LOAD: 该表项描述了一个可加载的段；
-  - PT_DYNAMIC: 该表项描述了一个动态链接信息；
-  - PT_INTERP: 该表项指定了一个interpreter的路径；
-  - PT_NOTE: 该表项指定了notes的位置；
-  - PT_SHLIB: 该类型被保留，但语义未指定。包含这个类型的段表项的程序不符合ABI规范；
-  - PT_PHDR: 该表项指定了段头表本身的位置和size；
-  - PT_LOPROC, PT_HIPROC: 该表项指定了一个范围[PT_LOPROC, PTHIPROC]，这个范围内数据用来保存处理特定机制信息；
-  - PT_GNU_STACK: GNU扩展，Linux内核使用该字段来p_flags中设置的Stack的状态；TODO
-- p_offset: 表示该段相对于文件开头的偏移量；
-- p_vaddr: 表示该段数据加载到内存后的虚拟地址；
-- p_paddr: 表示该段在内存中加载的物理地址；
-- p_filesz: 表示该段在文件中占用的大小；
-- p_memsz: 表示该段在内存中占用的大小；
-- p_flags: 表示该段的属性，以位掩码的形式：
-  - PF_X: 可执行；
-  - PF_W: 可写；
-  - PF_R: 可读；
-- p_align: 表示该段对齐方式；
+- p_type: Segment type
+  - PT_NULL: This table entry describes an undefined segment, can be ignored;
+  - PT_LOAD: This table entry describes a loadable segment;
+  - PT_DYNAMIC: This table entry describes dynamic linking information;
+  - PT_INTERP: This table entry specifies the path of an interpreter;
+  - PT_NOTE: This table entry specifies the location of notes;
+  - PT_SHLIB: This type is reserved but its semantics are unspecified. Programs containing segment table entries of this type do not conform to the ABI specification;
+  - PT_PHDR: This table entry specifies the location and size of the Program Header Table itself;
+  - PT_LOPROC, PT_HIPROC: This table entry specifies a range [PT_LOPROC, PTHIPROC], where data in this range is used to save processor-specific mechanism information;
+  - PT_GNU_STACK: GNU extension, Linux kernel uses this field to set the Stack state in p_flags; TODO
+- p_offset: Indicates the offset of this segment relative to the start of the file;
+- p_vaddr: Indicates the virtual address where this segment's data will be loaded into memory;
+- p_paddr: Indicates the physical address where this segment will be loaded in memory;
+- p_filesz: Indicates the size occupied by this segment in the file;
+- p_memsz: Indicates the size occupied by this segment in memory;
+- p_flags: Indicates the attributes of this segment, in the form of bit masks:
+  - PF_X: Executable;
+  - PF_W: Writable;
+  - PF_R: Readable;
+- p_align: Indicates the alignment method of this segment;
 
-> 注意，又是一些术语使用不够严谨可能导致理解偏差的地方：
+> Note, there are some places where terminology is not rigorous enough, which may lead to misunderstandings:
 >
-> - 内存地址空间中的内存布局，代码所在区域我们常称为代码段（code segment, CS寄存器来寻址）or 文本段（text segment），数据段我们也常称为数据段（data segment，DS寄存器来寻址）。
-> - 内存布局中的上述术语text segment、data segment，不是ELF文件中的.text section和.data section，注意区分。
+> - In the memory address space layout, the area where code is located is often called the code segment (code segment, addressed by CS register) or text segment (text segment), and the data segment is also often called the data segment (data segment, addressed by DS register).
+> - The terms text segment and data segment in the memory layout are not the .text section and .data section in the ELF file, please distinguish them.
 >
-> 下面的段头表定义给出了一个这样的示例，text segment其实包含了.text section以及其他sections，data segment其实也包含了.data section以外的其他sections。
+> The Program Header Table definition below gives such an example. The text segment actually contains the .text section and other sections, and the data segment actually contains sections other than the .data section.
 >
 > ```bash
-> // text segment，段索引02，可以看到包含了.text等其他sections
+> // text segment, segment index 02, you can see it contains .text and other sections
 > LOAD        0x0000000000000000 0x0000000000400000 0x0000000000400000
 >             0x0000000000000a70 0x0000000000000a70  R E    0x200000
 >
-> // data segment，段索引03，可以看到包含了.data等其他sections
+> // data segment, segment index 03, you can see it contains .data and other sections
 > LOAD        0x0000000000000df0 0x0000000000600df0 0x0000000000600df0
 >             0x000000000000025c 0x0000000000000260  RW     0x200000
 >
@@ -182,13 +182,13 @@ typedef struct {
 > 03     .init_array .fini_array .dynamic .got .got.plt .data .bss
 > ```
 
-#### 工具演示
+#### Tool Demonstration
 
-下面这个示例，则展示了测试程序 golang-debugger-lessons/testdata/loop2 的完整段头表定义，运行 `readelf -l`查看其段头表，共有7个表项，每个段定义包含了类型、在虚拟内存中的地址、读写执行权限，以及引用的sections。通过 `Section to Segment mapping: Segment Sections...`部分可以看到，最终组织好的：
+The following example shows the complete Program Header Table definition of the test program golang-debugger-lessons/testdata/loop2. Running `readelf -l` to view its Program Header Table, there are 7 entries, each segment definition includes type, address in virtual memory, read-write-execute permissions, and referenced sections. Through the `Section to Segment mapping: Segment Sections...` part, we can see that the final organization is:
 
-- text segment（编号02的segment其Flags为R+E，表示可读可执行，这就是text segment）包含了如下sections `.text .note.go.buildid`;
-- rodata segment (编号03的segment其Flags为R，表示只读，就是rodata segment) 包含了 `.rodata .typelink .itablink .gosymtab .gopclntab` 这些go运行时需要的数据；
-- data segment (编号04的segment其Flags为RW，表示可读可写，就是data segment) 包含了 `.data .bss` 等这些可读写的数据；
+- text segment (segment number 02 with Flags R+E, meaning readable and executable, this is the text segment) contains the following sections `.text .note.go.buildid`;
+- rodata segment (segment number 03 with Flags R, meaning read-only, this is the rodata segment) contains `.rodata .typelink .itablink .gosymtab .gopclntab` which are data needed by the go runtime;
+- data segment (segment number 04 with Flags RW, meaning readable and writable, this is the data segment) contains `.data .bss` and other readable and writable data;
 
 ```bash
 $ readelf -l testdata/loop2
@@ -224,31 +224,31 @@ Program Headers:
    06 
 ```
 
-一个section中数据最终会不会被加载到内存，也是由引用它的段的类型决定：PT_LOAD类型会被加载到内存，反之不会。
+Whether the data in a section will eventually be loaded into memory is also determined by the type of segment that references it: PT_LOAD type will be loaded into memory, otherwise it won't.
 
-以上面的go程序demo为例：
+Taking the above go program demo as an example:
 
-1）.gosymtab、.gopclntab所属的段（段索引值 03）类型是PT_LOAD，表示其数据会被加载到内存，这是因为go runtime依赖这些信息来计算stacktrace，比如 `runtime.Caller(skip)` 或者panic时 `runtime.Stack(buf)`。
+1) The segment (segment index 03) to which .gosymtab and .gopclntab belong is of type PT_LOAD, indicating that its data will be loaded into memory, because the go runtime depends on this information to calculate stacktrace, such as `runtime.Caller(skip)` or `runtime.Stack(buf)` when panic occurs.
 
-2）而.note.go.buildid所属的段（段索引 01）为NOTE类型，只看这个段的话，section .note.go.buildid不会被加载到内存，但是
+2) The segment (segment index 01) to which .note.go.buildid belongs is of type NOTE. Looking at this segment alone, section .note.go.buildid won't be loaded into memory, but
 
-3）注意到.note.go.buildid还被下面这个段索引为02、PT_TYPE=LOAD的段引用，那这个section最终就会被加载到内存中。
+3) Note that .note.go.buildid is also referenced by segment index 02 with PT_TYPE=LOAD, so this section will eventually be loaded into memory.
 
-> ps: 一般情况下，.note.* 这种sections就是给一些外部工具读取使用的，一般不会被加载到内存中，除非go设计者希望能从进程内存中直接读取到这部分信息，或者希望core转储时能包含这些信息以供后续提取使用。
+> ps: Generally, .note.* sections are for external tools to read and use, and are generally not loaded into memory, unless the go designers want to directly read this information from process memory, or want core dumps to include this information for later extraction and use.
 
-本章稍后的章节，会继续介绍ELF段头表信息如何指导loader加载程序数据到内存，以构建进程映像。
+Later in this chapter, we will continue to introduce how ELF Program Header Table information guides the loader to load program data into memory to build the process image.
 
-### 节头表 (Section Header Table)
+### Section Header Table
 
-每个编译单元生成的目标文件（ELF格式），将代码和数据划分成不同sections，如指令在.text、只读数据在.rodata、可读写数据在.data、其他vendor自定义sections，等等，实现了对不同数据的合理组织。
+Each compilation unit generates an object file (ELF format) that divides code and data into different sections, such as instructions in .text, read-only data in .rodata, readable and writable data in .data, and other vendor-defined sections, etc., achieving reasonable organization of different data.
 
-在此基础上，节头表 (Section Header Table)，定义了程序的链接视图（the linkable point of view），用来指导linker如何对多个编译单元中的sections进行链接（合并相同sections、符号解析、重定位）。
+On this basis, the Section Header Table defines the linkable point of view of the program, used to guide the linker in how to link sections from multiple compilation units (merging same sections, symbol resolution, relocation).
 
-这里就不得不提共享库类型：静态共享库（俗称静态链接库）、动态共享库（俗称动态链接库）。静态共享库，可以理解成包含了多个*.o文件；动态共享库，相当于把相同sections合并，merging not including \*.o 文件。链接生成最终的可执行程序的时候也是要将相同sections进行合并。至于更多的一些细节，此处先不展开。
+Here we have to mention shared library types: static shared libraries (commonly known as static link libraries) and dynamic shared libraries (commonly known as dynamic link libraries). Static shared libraries can be understood as containing multiple *.o files; dynamic shared libraries are equivalent to merging the same sections, merging not including *.o files. When linking to generate the final executable program, the same sections also need to be merged. As for more details, we won't expand here.
 
-#### 类型定义
+#### Type Definition
 
-节头表其实就是一系列section表项的数组，我们来看看其中每个描述表项的定义，section数据可根据其中地址、size来读取。
+The Section Header Table is actually an array of section entries. Let's look at the definition of each description entry. Section data can be read according to its address and size.
 
 ```c
 typedef struct {
@@ -278,40 +278,40 @@ typedef struct {
 } Elf64_Shdr;
 ```
 
-上面分别是32位、64位的定义，下面详细解释下每个字段的含义:
+The above are definitions for 32-bit and 64-bit respectively. Below is a detailed explanation of the meaning of each field:
 
-- sh_name: section name的偏移量，即section的名字在.strtab中的偏移量；
-- sh_type: section类型
-  - SHT_NULL: 空section，不包含任何数据；
-  - SHT_PROGBITS: 代码段、数据段；
-  - SHT_SYMTAB: 符号表；
-  - SHT_STRTAB: 字符串表；
-  - SHT_RELAG: 重定位表；
-  - SHT_HASH: 符号hash表；
-  - SHT_DYNAMIC: 动态链接表；
-  - SHT_NOTE: 符号注释；
-  - SHT_NOBITS: 空section，不包含任何数据；
-  - SHT_REL: 重定位表；
-  - SHT_SHLIB: 预留但是缺少明确定义；
-  - SHT_DYNSYM: 动态符号表；
-  - SHT_LOPROC, SHT_HIPROC: 定义了一个范围[SHT_LOPROC, SHT_HIPROC]用于处理器特定机制；
-  - SHT_LOUSER, SHT_HIUSER: 定义了一个范围[SHT_LOUSER, SHT_HIPROC]预留给给应用程序；
-- sh_flags: section标志位
-  - SHF_WRITE: 进程执行期间可写；
-  - SHF_ALLOC: 进程执行期间需要分配并占据内存；
-  - SHF_EXECINSTR: 包含进程执行期间的指令数据；
-  - SHF_MASKPROC: 预留给处理器相关的机制；
-- sh_addr: 如果当前section需要被加载到内存中，表示在内存中的虚拟地址；
-- sh_offset: 表示当前section相对文件开头的偏移量；
-- sh_size: section大小；
-- sh_link: 表示要链接的下一个节头表的索引，用于section链接顺序；
-- sh_info: section额外信息，具体解释依赖于sh_type；
-- sh_addralign: 对齐方式；
-- sh_entsize: 表示每个section的大小；
+- sh_name: Offset of the section name, that is, the offset of the section's name in .strtab;
+- sh_type: Section type
+  - SHT_NULL: Empty section, contains no data;
+  - SHT_PROGBITS: Code segment, data segment;
+  - SHT_SYMTAB: Symbol table;
+  - SHT_STRTAB: String table;
+  - SHT_RELAG: Relocation table;
+  - SHT_HASH: Symbol hash table;
+  - SHT_DYNAMIC: Dynamic linking table;
+  - SHT_NOTE: Symbol notes;
+  - SHT_NOBITS: Empty section, contains no data;
+  - SHT_REL: Relocation table;
+  - SHT_SHLIB: Reserved but lacks clear definition;
+  - SHT_DYNSYM: Dynamic symbol table;
+  - SHT_LOPROC, SHT_HIPROC: Defines a range [SHT_LOPROC, SHT_HIPROC] for processor-specific mechanisms;
+  - SHT_LOUSER, SHT_HIUSER: Defines a range [SHT_LOUSER, SHT_HIPROC] reserved for applications;
+- sh_flags: Section flags
+  - SHF_WRITE: Writable during process execution;
+  - SHF_ALLOC: Needs to be allocated and occupy memory during process execution;
+  - SHF_EXECINSTR: Contains instruction data during process execution;
+  - SHF_MASKPROC: Reserved for processor-related mechanisms;
+- sh_addr: If the current section needs to be loaded into memory, indicates its virtual address in memory;
+- sh_offset: Indicates the offset of the current section relative to the start of the file;
+- sh_size: Section size;
+- sh_link: Indicates the index of the next Section Header Table to be linked, used for section linking order;
+- sh_info: Additional section information, specific interpretation depends on sh_type;
+- sh_addralign: Alignment method;
+- sh_entsize: Indicates the size of each section;
 
-#### 工具演示
+#### Tool Demonstration
 
-OK，以测试程序golang-debugger-lessons/testdata/loop2测试程序为例，我们来看下其链接器角度的视图，可以看到其包含了25个sections，每个section都有类型、偏移量、大小、链接顺序、对齐等信息，用以指导链接器完成链接操作。
+OK, taking the test program golang-debugger-lessons/testdata/loop2 as an example, let's look at its linker's point of view. We can see that it contains 25 sections, each section has type, offset, size, linking order, alignment and other information, used to guide the linker in completing the linking operation.
 
 ```bash
 $ readelf -S testdata/loop2 
@@ -357,49 +357,49 @@ Key to Flags:
   l (large), p (processor specific)
 ```
 
-### 节 (Sections)
+### Sections
 
-#### 类型定义
+#### Type Definition
 
-这里的section指的就是ELF section里面的数据了，就是一堆bytes，它由节头表、段头表来引用。比如节头表表项中有地址、size指向对应的某块section数据。
+Here, section refers to the data in the ELF section, which is just a bunch of bytes, referenced by the Section Header Table and Program Header Table. For example, the Section Header Table entry has an address and size pointing to the corresponding section data.
 
-#### 常见的节
+#### Common Sections
 
-ELF文件会包含很多的sections，前面给出的测试实例中就包含了25个sections。先了解些常见的sections的作用，为后续加深对linker、loader、debgguer工作原理的认识提前做点准备。
+ELF files contain many sections, and the test example given earlier contains 25 sections. Let's first understand the role of some common sections, to prepare for a deeper understanding of how the linker, loader, and debugger work.
 
-- .text: 编译好的程序指令；
-- .rodata: 只读数据，如程序中的常量字符串；
-- .data：已经初始化的全局变量；
-- .bss：未经初始化的全局变量，在ELF文件中只是个占位符，不占用实际空间；
-- .symtab：符号表，每个可重定位文件都有一个符号表，存放程序中定义的全局函数和全局变量的信息，注意它不包含局部变量信息，局部非静态变量由栈来管理，它们对链接器符号解析、重定位没有帮助。
-- .debug_*: 调试信息，调试器读取该信息以支持符号级调试（如gcc -g生成，go build默认生成）；
-- .strtab：字符串表，包括.symtab和.[z]debug_*节引用的字符串值、section名；
-- .rel.text：一个.text section中引用的位置及符号列表，当链接器尝试把这个目标文件和其他文件链接时，需要对其中符号进行解析、重定位成正确的地址；
-- .rel.data：引用的一些全局变量的位置及符号列表，和.rel.text有些类似，也需要符号解析、重定位成正确的地址；
+- .text: Compiled program instructions;
+- .rodata: Read-only data, such as constant strings in the program;
+- .data: Initialized global variables;
+- .bss: Uninitialized global variables, just a placeholder in the ELF file, doesn't occupy actual space;
+- .symtab: Symbol table, each relocatable file has a symbol table, storing information about global functions and global variables defined in the program. Note that it doesn't contain local variable information, local non-static variables are managed by the stack, they don't help with linker symbol resolution and relocation.
+- .debug_*: Debug information, read by the debugger to support symbol-level debugging (such as generated by gcc -g, go build generates by default);
+- .strtab: String table, including string values and section names referenced by .symtab and .[z]debug_* sections;
+- .rel.text: A list of locations and symbols referenced in a .text section. When the linker tries to link this object file with other files, it needs to resolve and relocate the symbols to correct addresses;
+- .rel.data: A list of locations and symbols of some referenced global variables, similar to .rel.text, also needs symbol resolution and relocation to correct addresses;
 
-如果您想了解更多支持的sections及其作用，可以查看man手册：`man 5 elf`，这里我们就不一一列举了。
+If you want to learn more about supported sections and their roles, you can check the man manual: `man 5 elf`. We won't list them all here.
 
-#### 自定义节
+#### Custom Sections
 
-ELF也支持自定义sections，如go语言添加了.gosymtab、.gopclntab、.note.build.id来支持go运行时、go工具链的一些操作。
+ELF also supports custom sections, such as Go language adding .gosymtab, .gopclntab, .note.build.id to support some operations of the Go runtime and Go toolchain.
 
-#### 工具演示
+#### Tool Demonstration
 
-这里我们来简单介绍下如何查看sections中的内容：
+Here we'll briefly introduce how to view the contents of sections:
 
-- 以字符串形式打印：`readelf --string-dump=<section> <prog>`；
-- 以十六进制数打印：`readelf --hex-dump=<section> <prog>`；
-- 打印前先完成重定位，再以十六进制打印：`readelf --relocated-dump=<section> <prog>`；
-- 打印DWARF调试信息：`readelf --debug-dump=<section> <prog>`；
+- Print as string: `readelf --string-dump=<section> <prog>`;
+- Print as hexadecimal: `readelf --hex-dump=<section> <prog>`;
+- Complete relocation first, then print as hexadecimal: `readelf --relocated-dump=<section> <prog>`;
+- Print DWARF debug information: `readelf --debug-dump=<section> <prog>`;
 
-以go语言为例，首先 `go tool buildid <prog>`提取buildid信息，这个其实就是存储在.note.go.buildid section中的。来验证下，首先通过 `go tool buildid`来提取buildid信息：
+Taking Go language as an example, first `go tool buildid <prog>` extracts buildid information, which is actually stored in the .note.go.buildid section. Let's verify this. First, extract buildid information through `go tool buildid`:
 
 ```bash
 $ go tool buildid testdata/loop
 _Iq-Pc8WKArkKz99o-e6/6mQTe-5rece47rT9tQco/8IOigl4fPBb3ZSKYst1T/QZmo-_A8O3Ec6NVYEn_1
 ```
 
-接下来通过 `readelf --string-dump=.note.go.buildid <prog>`直接读取ELF文件中的数据：
+Next, directly read the data from the ELF file through `readelf --string-dump=.note.go.buildid <prog>`:
 
 ```bash
 $ readelf --string-dump=.note.go.buildid testdata/loop
@@ -409,19 +409,19 @@ String dump of section '.note.go.buildid':
   [    10]  _Iq-Pc8WKArkKz99o-e6/6mQTe-5rece47rT9tQco/8IOigl4fPBb3ZSKYst1T/QZmo-_A8O3Ec6NVYEn_1
 ```
 
-结果发现buildid数据是一致的，证实了我们上述判断。
+The result shows that the buildid data is consistent, confirming our above judgment.
 
-本节ELF内容就先介绍到这里，在此基础上，接下来我们将循序渐进地介绍linker、loader、debugger的工作原理。
+This section on ELF content ends here. On this basis, we will gradually introduce how the linker, loader, and debugger work.
 
-### 本文总结
+### Summary
 
-本文较为详细地介绍了ELF文件结构，介绍了ELF文件头、段头表、节头表的定义，以及通过实例演示了段头表、节头表对节的引用，以及如何通过readelf命令进行查看。我们还介绍了一些常见的节的作用，go语言中为了支持高级特性自主扩展的一些节。读完本节内容后相信读者已经对ELF文件结构有了一个初步的认识。
+This article introduced the ELF file structure in detail, including the definitions of the ELF file header, Program Header Table, and Section Header Table, and demonstrated through examples how the Program Header Table and Section Header Table reference sections, and how to view them using the readelf command. We also introduced the roles of some common sections and some sections that Go language has extended on its own to support advanced features. After reading this section, readers should have a preliminary understanding of the ELF file structure.
 
-接下来，我们将介绍符号表、符号的内容，这里先简单提一下。说起符号，ELF .symtab、DWARF .debug_* sections都提供了“符号”信息，编译过程中会记录下来有哪些符号，链接器连接过程中会决定将上述哪些符号生成到.symtab，以及哪些调试类型的符号需要生成信息到.debug_* sections。现在来看.debug_* sections是专门为调试准备的，是链接器严格按照DWARF标准、语言设计、和调试器约定来生成的，.symtab则主要包含链接器符号解析、重定位需要用到的符号。.symtab中其实也可以包含用于支持调试的符号信息，主要看链接器是个什么策略。
+Next, we will introduce the content of symbol tables and symbols. Let's mention it briefly here. Speaking of symbols, both ELF .symtab and DWARF .debug_* sections provide "symbol" information. During compilation, it records which symbols exist, and during the linking process, the linker decides which of the above symbols to generate into .symtab, and which debug-type symbols need to generate information into .debug_* sections. Now looking at it, .debug_* sections are specifically prepared for debugging, generated by the linker strictly according to the DWARF standard, language design, and debugger agreement. .symtab mainly contains symbols needed for linker symbol resolution and relocation. .symtab can actually also contain symbol information for supporting debugging, mainly depending on what strategy the linker uses.
 
-比如，gdb作为一款诞生年代很久的调试器，就非常依赖.symtab中的符号信息来进行调试。DWARF是后起之秀，尽管gdb现在也逐渐往DWARF上去靠，但是为了兼容性（如支持老的二进制调试、工具链）还是会保留利用符号表调试的实现方式。如果想让gdb也能调试go程序，就得了解gdb的工作机制，在.symtab, .debug_\* sections中生成其需要的信息，see：[GDB为什么同时使用.symtab和DWARF](./92-why-gdb-uses-symtab.md)。
+For example, gdb, as a debugger born in an early era, relies heavily on symbol information in .symtab for debugging. DWARF is a latecomer. Although gdb is gradually moving towards DWARF, for compatibility (such as supporting debugging of old binaries and toolchains), it still retains the implementation method of debugging using symbol tables. If you want gdb to also debug go programs, you need to understand gdb's working mechanism and generate the information it needs in .symtab and .debug_* sections, see: [Why GDB Uses Both .symtab and DWARF](./92-why-gdb-uses-symtab.md).
 
-### 参考文献
+### References
 
 1. Executable and Linkable Format, https://en.wikipedia.org/wiki/Executable_and_Linkable_Format
 2. How to Fool Analysis Tools, https://tuanlinh.gitbook.io/ctf/golang-function-name-obfuscation-how-to-fool-analysis-tools

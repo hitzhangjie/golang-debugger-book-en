@@ -1,8 +1,8 @@
-## go tool link: 调试信息生成
+## go tool link: Debug Information Generation
 
 ### ld.Main()->dwarfGenerateDebugSyms()
 
-下面是链接器生成所有DWARF调试信息的路径，
+Below is the path where the linker generates all DWARF debug information,
 
 file: cmd/link/internal/ld/main.go
 
@@ -24,9 +24,9 @@ func Main() {
 }
 ```
 
-分析一下这两个函数的关系：
+Let's analyze the relationship between these two functions:
 
-1. 从代码注释中可以看到这两个函数是 DWARF 调试信息生成的两个主要入口点：
+1. From the code comments, you can see these two functions are the two main entry points for generating DWARF debug information:
 
 ```go
 // dwarfGenerateDebugInfo generated debug info entries for all types,
@@ -38,50 +38,50 @@ func Main() {
 // text symbols.
 ```
 
-2. 它们的主要区别在于执行时机和职责：
+2. Their main differences are in execution timing and responsibilities:
 
 - `dwarfGenerateDebugInfo`:
 
-  - 在符号名称被修改(mangled)之前执行 （源代码中的函数 `func Add(a, b int) int`，经过名称修饰后可能变成 `go.info.Add$main$int$int$int`）
-  - 负责生成所有类型、变量和函数的调试信息条目
-  - 主要处理 DWARF 信息的内容生成
+  - Executes before symbol names are mangled (for example, the source code function `func Add(a, b int) int` might become `go.info.Add$main$int$int$int` after name mangling)
+  - Responsible for generating debug info entries for all types, variables, and functions
+  - Mainly handles the content generation of DWARF information
 - `dwarfGenerateDebugSyms`:
 
-  - 在文本符号(text symbols)的地址被分配之后执行
-  - 负责生成调试符号
-  - 主要处理 DWARF 信息的布局和最终输出
+  - Executes after addresses have been assigned to text symbols
+  - Responsible for generating debug symbols
+  - Mainly handles the layout and final output of DWARF information
 
-3. 从 `main.go` 中的调用顺序可以看出它们的执行顺序：
+3. From the call order in `main.go`, you can see their execution sequence:
 
 ```go
 bench.Start("dwarfGenerateDebugInfo")
 dwarfGenerateDebugInfo(ctxt)
 
-// ... 中间有其他操作 ...
+// ... other operations in between ...
 
 bench.Start("dwarfGenerateDebugSyms")
 dwarfGenerateDebugSyms(ctxt)
 ```
 
-4. 具体实现上：
+4. In terms of implementation:
 
-- `dwarfGenerateDebugInfo` 主要做：
+- `dwarfGenerateDebugInfo` mainly does:
 
-  - 初始化 DWARF 上下文
-  - 生成类型信息
-  - 处理编译单元
-  - 收集变量和函数信息
-- `dwarfGenerateDebugSyms` 主要做：
+  - Initializes DWARF context
+  - Generates type information
+  - Handles compilation units
+  - Collects variable and function information
+- `dwarfGenerateDebugSyms` mainly does:
 
-  - 生成 .debug_line、.debug_frame 和 .debug_loc 等调试段
-  - 处理地址相关的信息
-  - 最终输出调试信息
+  - Generates .debug_line, .debug_frame, and .debug_loc debug sections
+  - Handles address-related information
+  - Outputs the final debug information
 
-5. 它们共同完成 DWARF 调试信息的生成，但分成了两个阶段：
-   - 第一阶段(`dwarfGenerateDebugInfo`)专注于内容的生成
-   - 第二阶段(`dwarfGenerateDebugSyms`)专注于布局和输出
+5. Together, they complete the generation of DWARF debug information, but split into two stages:
+   - The first stage (`dwarfGenerateDebugInfo`) focuses on content generation
+   - The second stage (`dwarfGenerateDebugSyms`) focuses on layout and output
 
-这种分阶段的设计使得 DWARF 调试信息的生成更加清晰和可控，同时也符合链接器的工作流程 - 先确定内容，再确定布局和地址。
+This staged design makes the generation of DWARF debug information clearer and more controllable, and also fits the workflow of the linker—first determine content, then determine layout and addresses.
 
 ### entry1: dwarfGenerateDebugInfo
 
@@ -214,7 +214,7 @@ func dwarfGenerateDebugSyms(ctxt *Link) {
 
 ### ld.Main()→dwarfcompress(*Link)
 
-**linker对dwarf调试信息进行必要的压缩**
+**The linker performs necessary compression on DWARF debug information**
 
 ```go
 // dwarfcompress compresses the DWARF sections. Relocations are applied

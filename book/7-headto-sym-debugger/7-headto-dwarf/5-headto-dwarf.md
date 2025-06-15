@@ -1,14 +1,14 @@
-## 可以了解DWARF了
+## Ready to Learn DWARF
 
-回头看下，我们的底子已经比较扎实：
+Looking back, we have built a solid foundation:
 
-- 1~2章，介绍了作者分享本书内容的初衷；
-- 第3章，介绍了调试领域的专业术语；
-- 第4章，一起学习了调试相关的基础知识，目的、依赖的支持、安全为目的的反调试措施；
-- 第5章，一起分析了调试器的功能性需求、非功能性需求，明确了我们要做什么；
-- 第6章，一起实现了功能相对完整的指令级调试器，比较详细地介绍了调试的底层控制机制；
-- 第7章，这是我们为符号级调试器开发打基础的章节，倾注大量精力从ELF文件结构组织，再到符号、调试符号以及编译工具链如何生成它们，后续如何利用它们。
+- Chapters 1-2 introduced the author's motivation for sharing this book's content;
+- Chapter 3 covered professional terminology in the debugging field;
+- Chapter 4 explored debugging fundamentals together, including purposes, required support, and security-focused anti-debugging measures;
+- Chapter 5 analyzed both functional and non-functional requirements for debuggers, clarifying what we need to build;
+- Chapter 6 implemented a relatively complete instruction-level debugger, detailing the low-level control mechanisms for debugging;
+- Chapter 7 laid the groundwork for symbolic debugger development, dedicating significant effort to understanding ELF file structure organization, symbols, debug symbols, and how the compiler toolchain generates and utilizes them.
 
-读者朋友能够坚持到现在，非常棒 👍，此处应该为自己鼓鼓掌 。不敢说读到这里已经超越了别人，但肯定超越了自己。
+For readers who have persevered to this point - excellent work 👍, you deserve a round of applause. While we can't say you've surpassed others, you've certainly surpassed yourself.
 
-第8章我们将正式走进DWARF，一起来学习DWARF调试信息标准，掌握其描述代码和数据的方式，一窥DWARF标准对不同高级语言的高屋建瓴的抽象建模能力。届时你会发现DWARF标准除了复杂，也有高超、强大、美的一面。
+In Chapter 8, we'll formally enter the world of DWARF, learning the DWARF debugging information standard together, mastering how it describes code and data, and glimpsing DWARF's sophisticated abstract modeling capabilities for different high-level languages. You'll discover that beyond its complexity, DWARF also has aspects that are advanced, powerful, and beautiful.

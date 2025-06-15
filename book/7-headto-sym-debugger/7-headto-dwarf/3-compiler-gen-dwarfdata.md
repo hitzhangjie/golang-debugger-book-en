@@ -1,32 +1,32 @@
-## go tool compile: DWARF调试信息生成
+## go tool compile: DWARF Debug Information Generation
 
 ### gc.Main()→dwarfgen.RecordFlags()
 
-**记录当前构建信息到dwarf调试信息中去，方便调试器调试时查看tracee的构建细节**
+**Record current build information into DWARF debug information to help debuggers view tracee's build details**
 
 ```go
-这个函数的主要目的是将编译器的命令行参数记录到 DWARF 调试信息中。DWARF 是一种调试信息格式，用于帮助调试器理解程序的内部结构。具体来说：
-1. 函数接收一系列标志名称作为参数，这些标志是编译器命令行参数
-2. 对于每个标志，函数会：
-    - 检查标志是否存在
-    - 检查标志值是否与默认值不同（如果相同则跳过）
-    - 根据标志类型（布尔型、计数型或普通型）以不同格式记录到缓冲区中
-3. 特殊处理：
-    - 对于布尔型标志（如 -race），如果值为 true，只记录标志名
-    - 对于计数型标志（如 -v），如果值为 1，只记录标志名
-    - 对于其他标志，记录标志名和值（如 -gcflags="-N -l"）
-4. 最后，这些参数会被存储在一个特殊的符号中：
-    - 符号名格式为 dwarf.CUInfoPrefix + "producer." + base.Ctxt.Pkgpath
-    - 符号类型设置为 objabi.SDWARFCUINFO（表示这是编译单元信息）
-    - 允许重复（因为测试时可能会链接多个 main 包）
-    - 将参数信息存储在符号的数据中
-这样做的目的是让调试器能够知道程序是如何被编译的，这对于调试和问题诊断很有帮助。比如，如果程序是用 -race 编译的，调试器就能知道这是一个竞态检测版本的程序。
-这个信息会被写入到最终的可执行文件中，作为 DWARF 调试信息的一部分。当使用调试器（如 GDB）时，这些信息可以帮助开发者更好地理解程序的编译环境和配置。
+The main purpose of this function is to record compiler command line arguments into DWARF debug information. DWARF is a debug information format used to help debuggers understand a program's internal structure. Specifically:
+1. The function takes a series of flag names as parameters, these flags are compiler command line arguments
+2. For each flag, the function will:
+    - Check if the flag exists
+    - Check if the flag value differs from the default value (skip if same)
+    - Record into buffer in different formats based on flag type (boolean, count, or normal)
+3. Special handling:
+    - For boolean flags (like -race), if value is true, only record flag name
+    - For count flags (like -v), if value is 1, only record flag name
+    - For other flags, record both flag name and value (like -gcflags="-N -l")
+4. Finally, these parameters are stored in a special symbol:
+    - Symbol name format is dwarf.CUInfoPrefix + "producer." + base.Ctxt.Pkgpath
+    - Symbol type set to objabi.SDWARFCUINFO (indicating this is compilation unit information)
+    - Allow duplicates (because tests may link multiple main packages)
+    - Store parameter information in symbol data
+The purpose is to let debuggers know how the program was compiled, which is helpful for debugging and problem diagnosis. For example, if a program was compiled with -race, the debugger will know this is a race detection version of the program.
+This information is written to the final executable file as part of the DWARF debug information. When using a debugger (like GDB), this information can help developers better understand the program's compilation environment and configuration.
 ```
 
-### gc.Main()→dwarf flags设置
+### gc.Main()→dwarf flags setting
 
-**根据命令行参数设置对应的dwarf设置**
+**Set corresponding dwarf settings based on command line parameters**
 
 ```go
 if base.Flag.Dwarf {
@@ -48,7 +48,7 @@ if base.Flag.Dwarf {
 
 ### gc.Main()→dwarfgen.RecordPackageName()
 
-**记录下当前编译单元的PackageName，记录在哪呢？生成一个符号表符号，类型为SDWARFCUINFO**
+**Record the current compilation unit's PackageName, where is it recorded? Generate a symbol table symbol of type SDWARFCUINFO**
 
 ```go
 // RecordPackageName records the name of the package being
@@ -66,7 +66,7 @@ func RecordPackageName() {
 
 ### gc.Main()→dumpGlobal(n)/dumpGlobalConst(n)
 
-**将当前localpackage中的全局变量、常量生成到dwarf调试信息**
+**Generate global variables and constants from current localpackage into DWARF debug information**
 
 ```go
 for nextFunc, nextExtern := 0, 0; ; {
@@ -159,7 +159,7 @@ gc.Main()
                                    \-> (*Link).populateDWARF
 ```
 
-OK，详细展开看看：
+OK, let's look at the details:
 
 ```go
 func gc.Main(...) {
@@ -198,7 +198,7 @@ func gc.Main(...) {
     }
 }
 
-// 递归地分析fn中的body，如果内部还有新创建的fn将继续假如compilequeue
+// Recursively analyze fn's body, if there are newly created fns inside they will be added to compilequeue
 func enqueueFunc(fn *ir.Func) {
     todo := []*ir.Func{fn}
     for len(todo) > 0 {
@@ -246,26 +246,6 @@ func Compile(fn *ir.Func, worker int, profile *pgoir.Profile) {
     genssa(f, pp)
     ...
     pp.Flush() // assemble, fill in boilerplate, etc.
-    ...
-}
-
-// Flush converts from pp to machine code.
-func (pp *Progs) Flush() {
-    plist := &obj.Plist{Firstpc: pp.Text, Curfn: pp.CurFunc}
-    obj.Flushplist(base.Ctxt, plist, pp.NewProg)
-}
-
-func Flushplist(ctxt *Link, plist *Plist, newprog ProgAlloc) {
-    ...
-    ctxt.populateDWARF(plist.Curfn, s)
-    ...
-}
-
-// populateDWARF fills in the DWARF Debugging Information Entries for
-// TEXT symbol 's'. The various DWARF symbols must already have been
-// initialized in InitTextSym.
-func (ctxt *Link) populateDWARF(curfn Func, s *LSym) {
-    // see more details below
     ...
 }
 ```
@@ -402,17 +382,22 @@ file: cmd/internal/obj/link.go
 // It represents Go symbols in a flat pkg+"."+name namespace.
 type LSym struct {
     Name string
-    Type objabi.SymKind // <= 这里的类型为DWARF符号类型，
-                        //    1) 将来链接器会将其统一生成到.debug_ 相关的sections
-                        //    2) 那是不是所有DWARF信息都是通过LSym记录的呢？
-                        //       可以这么说！链接器负责整合、再加工这些信息，然后生成到.debug_ sections,
-                        //       比如典型的.debug_frames，编译器记录函数相关的LSym，
-                        //     
+
+    // For debug-related symbols, the type here is DWARF symbol type:
+    //    1) The linker will later generate these uniformly into .debug_ related sections
+    //    2) Are all DWARF information recorded through LSym?
+    // Yes! The linker is responsible for integrating and reprocessing this information,
+    // then generating it into .debug_ sections. For example, for typical .debug_frames,
+    // the compiler records function-related LSym.
+    //
+    // For DWARF symbol types, see: https://tip.golang.org/src/cmd/link/internal/sym/symkind.go#:~:text=//%20Sections%20for%20debugging,SDWARFADDR
+    Type objabi.SymKind 
+
     Attribute
 
     Size   int64
     Gotype *LSym
-    P      []byte       // <= DWARF编码数据会记录在这里
+    P      []byte       // <= DWARF encoded data
     R      []Reloc
 
     Extra *interface{} // *FuncInfo, *VarInfo, *FileInfo, or *TypeInfo, if present

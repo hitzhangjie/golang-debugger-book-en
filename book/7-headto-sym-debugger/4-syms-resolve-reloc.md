@@ -1,149 +1,149 @@
-## 符号解析 & 重定位
+## Symbol Resolution & Relocation
 
-前面详细介绍了符号和符号表的基础知识，这里我们继续介绍下符号解析（symbol resolution）和重定位（relocation）相关内容。
+In the previous sections, we covered the basics of symbols and symbol tables. Here, we'll continue by introducing symbol resolution and relocation.
 
-### 内容概览
+### Content Overview
 
-每个可重定位目标模块m都有一个符号表，它包含m所定义和引用的符号的信息，在链接器上下文中，有3种不同的符号：
+Each relocatable object module m has a symbol table that contains information about symbols defined and referenced by m. In the context of the linker, there are three different types of symbols:
 
-- 由m定义并能够被其他模块引用的全局符号；
-- 由其他模块定义并能被当前模块m引用的全局符号；
-- 只被模块定义和引用的本地符号（如c语言static修饰的全局函数或全局变量）；
+- Global symbols defined by m that can be referenced by other modules;
+- Global symbols defined by other modules that can be referenced by the current module m;
+- Local symbols that are only defined and referenced within the module (such as global functions or variables marked as static in C);
 
-> 不管是\*.o文件，还是\*.a文件，还是\*.so文件 ……，\*.o文件包含了.symtab，\*.a文件中的每个\*.o文件都包含了.symtab，\*.so文件包含了.dynsym，这些section里面记录了定义了哪些符号。
+> Whether it's a *.o file, *.a file, or *.so file... *.o files contain .symtab, each *.o file in *.a files contains .symtab, and *.so files contain .dynsym. These sections record which symbols are defined.
 
-**符号解析**，指的是对于每个被引用的符号，链接器需要找到这个符号的定义，从哪里找？从所输入的可重定位目标文件列表中，逐一检查各个重定位目标文件的符号表，找到与该引用对应的符号定义。对于仅引用了\*.o和\*.a文件中的符号定义，静态链接器符号解析完立即可以重定位；对于引用了\*.so中的符号定义的情况，静态链接器的处理有所不同，此时静态链接器仅仅是在 `.rel.dyn` section中记录一些重定位条目，用来指导后续的动态链接器完成解析、重定位，也称为lazy binding。
+**Symbol resolution** refers to the process where the linker needs to find the definition of each referenced symbol. Where does it look? It checks the symbol tables of each relocatable object file in the input list to find the symbol definition corresponding to the reference. For symbols defined in *.o and *.a files, the static linker can perform relocation immediately after symbol resolution; for symbols defined in *.so files, the static linker handles them differently, only recording relocation entries in the `.rel.dyn` section to guide the subsequent dynamic linker in completing resolution and relocation, also known as lazy binding.
 
-**重定位**，指的是编译器为每个编译单元生成指令、数据sections后，1) 静态链接器需要合并相同sections并为它们安排地址(relocating sections)，也为定义的每个符号分配地址 (relocating symbol definitions)，2) 当链接器将引用解析到对应的符号定义后，要将引用处替换为符号定义的相对地址或者绝对地址 (relocating symbol references within sections)。对于仅引用\*.o和\*.a中的符号定义的情况，和引用了\*.so中的符号定义的情况，重定位有有所不同。对于前者，静态链接器直接将引用位置替换成相对地址或者绝对地址即可；对于后者，是在loader加载程序时，调用动态链接器来将对应的\*.so文件加载，并在引用定义在\*.so文件中的变量或者函数访问时，才会触发符号解析，此时会在相关的so文件的.dynsym中搜索对应的符号定义，搜索到了后就准备进行重定位，此时要根据.rel.dyn section中的重定位条目的描述（比如重定位类型)完成重定位并更新到.got或者.got.plt对应的地址中去。
+**Relocation** refers to two steps after the compiler generates instruction and data sections for each compilation unit: 1) The static linker needs to merge identical sections and assign addresses to them (relocating sections), and also assign addresses to each defined symbol (relocating symbol definitions); 2) After the linker resolves references to their corresponding symbol definitions, it needs to replace the references with relative or absolute addresses of the symbol definitions (relocating symbol references within sections). The relocation process differs between symbols defined in *.o and *.a files versus those defined in *.so files. For the former, the static linker directly replaces the reference location with a relative or absolute address; for the latter, when the loader loads the program, it calls the dynamic linker to load the corresponding *.so file, and symbol resolution is triggered when accessing variables or functions defined in the *.so file. At this point, it searches for the corresponding symbol definition in the .dynsym of the relevant so file. After finding it, it prepares for relocation, using the description in the .rel.dyn section (such as relocation type) to complete the relocation and update the corresponding address in .got or .got.plt.
 
-符号解析、重定位是一整个工具链协作的过程。通常计算机书籍考虑到篇幅原因，会将其拆开来讲。但是考虑到符号解析和重定位是紧密相关的两个步骤，本来这部分工作原理就没那么直观，不恰当的内容分割（符号解析 与 重定位，静态库 与 动态库的不同处理方式），会让读者理解起来更费劲。所以我反其道而行之，将符号解析和重定位在一篇文章里说透。下面开始详细介绍，如果你感觉上面的总结已经让你“悟"了，您也可以选择性跳过。
+Symbol resolution and relocation are part of a collaborative process in the toolchain. Usually, computer books split these topics due to space constraints. However, considering that symbol resolution and relocation are closely related steps, and the working principles are not very intuitive, inappropriate content segmentation (between symbol resolution and relocation, and different handling methods for static and dynamic libraries) can make it harder for readers to understand. Therefore, I'll take the opposite approach and explain symbol resolution and relocation thoroughly in one article. Let's begin with the detailed introduction. If you feel that the above summary has already given you an "aha" moment, you can skip ahead selectively.
 
-### 解析符号类型
+### Resolving Symbol Types
 
-#### 本地符号解析
+#### Local Symbol Resolution
 
-对那些引用当前模块中定义的本地符号的情况，符号解析是非常简单明了的。编译器只允许每个模块中每个本地符号只有一个定义。编译器还能确保，静态局部变量也会有本地链接符号，且拥有唯一的名字。本地符号解析比较简单。
+For references to local symbols defined in the current module, symbol resolution is very straightforward. The compiler only allows one definition of each local symbol in each module. The compiler also ensures that static local variables have local link symbols with unique names. Local symbol resolution is relatively simple.
 
-#### 全局符号解析
+#### Global Symbol Resolution
 
-但是，对于解析全局符号就棘手多了：
+However, resolving global symbols is more challenging:
 
-1. 当编译器遇到一个不是在当前模块中定义的符号的时候（可能是变量名或者函数名），它会假设该符号是在其它某个模块中定义的，编译器将为这样的每个符号都生成一个链接器符号表条目，并把它交给链接器进行处理。
-2. 链接器连接的时候会读取这个待重定位符号表，然后从所有的输入模块中查找对应的符号定义，如果某个引用符号没有找到其定义，链接器就会输出一个错误。
-3. 如果链接器找到了一个引用符号的多次重复定义（多重定义），是直接抛出错误？还是有办法知道该选择哪一个呢？这就涉及到符号的强弱规则问题。
+1. When the compiler encounters a symbol not defined in the current module (which could be a variable name or function name), it assumes the symbol is defined in some other module. The compiler generates a linker symbol table entry for each such symbol and passes it to the linker for processing.
+2. When linking, the linker reads this relocatable symbol table and searches for corresponding symbol definitions from all input modules. If a referenced symbol is not found, the linker outputs an error.
+3. If the linker finds multiple definitions of a referenced symbol (multiple definitions), should it throw an error directly, or is there a way to know which one to choose? This involves the issue of strong and weak symbol rules.
 
-在编译时，编译器向汇编器输出每个全局符号，或者是强（strong）或者是弱（weak），而汇编器把这个信息记录在当前这个可重定位目标文件的符号表里，准确地说是记录在对应符号的字段 `Elf_symbol.binding`字段中。
+During compilation, the compiler outputs each global symbol to the assembler as either strong or weak, and the assembler records this information in the symbol table of the current relocatable object file, specifically in the `Elf_symbol.binding` field of the corresponding symbol.
 
-- 强符号：`(binding & global != 0) && (binding & weak == 0)`
-- 弱符号：`binding & weak == 1`
+- Strong symbol: `(binding & global != 0) && (binding & weak == 0)`
+- Weak symbol: `binding & weak == 1`
 
-根据强弱符号的定义，Unix链接器使用下面的规则来处理多重定义的符号：
+Based on the definition of strong and weak symbols, Unix linkers use the following rules to handle multiply defined symbols:
 
-- 规则1：不允许有多个强符号
-- 规则2：如果有一个强符号和多个弱符号，那么选择强符号；
-- 规则3：如果有多个弱符号，那么从这些弱符号中任意选择一个；
+- Rule 1: Multiple strong symbols are not allowed
+- Rule 2: If there is one strong symbol and multiple weak symbols, choose the strong symbol
+- Rule 3: If there are multiple weak symbols, arbitrarily choose one from these weak symbols
 
-严格遵循这些规则，就可以正确完成全局符号的解析任务。
+By strictly following these rules, global symbol resolution can be correctly completed.
 
-### 符号多重定义
+### Multiple Symbol Definitions
 
-在编译和链接过程中，**强符号（Strong Symbol）**和**弱符号（Weak Symbol）**的区分主要由编译器和链接器的规则决定，具体规则如下。
+In the compilation and linking process, the distinction between **Strong Symbols** and **Weak Symbols** is mainly determined by compiler and linker rules, as follows.
 
-#### 强符号&弱符号
+#### Strong & Weak Symbols
 
-- **强符号**：
-  - 由普通的全局变量或函数定义（未显式标记为弱符号，有初始化或非 `extern`声明）。
+- **Strong Symbols**:
+  - Defined by ordinary global variables or functions (not explicitly marked as weak, with initialization or non-`extern` declaration).
     ```c
-    int global_var = 42;  // 强符号
-    void func() { ... }   // 强符号
+    int global_var = 42;  // Strong symbol
+    void func() { ... }   // Strong symbol
     ```
-- **弱符号**：
-  - 通过编译器选项显式标记为弱（如 GCC 的 `__attribute__((weak))`）。
+- **Weak Symbols**:
+  - Explicitly marked as weak through compiler options (such as GCC's `__attribute__((weak))`).
     ```c
-    __attribute__((weak)) int y;  // 弱符号
-    __attribute__((weak)) void bar() {}  // 弱符号
+    __attribute__((weak)) int y;  // Weak symbol
+    __attribute__((weak)) void bar() {}  // Weak symbol
     ```
-  - 未初始化的全局变量（在 C 中，未初始化的全局变量默认是强符号，但在某些编译器中可能被视为弱符号，需具体分析）。
-  - 某些特殊情况下（如 C++ 的模板实例化冲突时可能生成弱符号）。
+  - Uninitialized global variables (in C, uninitialized global variables are strong symbols by default, but may be treated as weak symbols in some compilers, requiring specific analysis).
+  - Special cases (such as C++ template instantiation conflicts may generate weak symbols).
 
-#### 链接器的行为
+#### Linker Behavior
 
-- **强符号优先**：若强符号和弱符号同名，链接器选择强符号。
-- **多个弱符号**：若只有弱符号同名，链接器可任选一个（通常报错，除非使用 `--allow-shlib-undefined` 等选项）。
+- **Strong Symbol Priority**: If a strong symbol and weak symbol have the same name, the linker chooses the strong symbol.
+- **Multiple Weak Symbols**: If only weak symbols have the same name, the linker can choose any one (usually reports an error unless using options like `--allow-shlib-undefined`).
 
-下面是一个示例：
+Here's an example:
 
 ```c
-  // 文件1.c
-  __attribute__((weak)) int global = 1;  // 弱符号
+  // file1.c
+  __attribute__((weak)) int global = 1;  // Weak symbol
 
-  // 文件2.c
-  int global = 2;                        // 强符号（覆盖弱符号）
+  // file2.c
+  int global = 2;                        // Strong symbol (overrides weak symbol)
 ```
 
-  链接后 `global` 的值为 `2`。
+After linking, the value of `global` is `2`.
 
-#### 应用场景及验证
+#### Application Scenarios and Verification
 
-- **动态库（.so/.dll）**：弱符号允许动态库覆盖主程序的符号（如插件机制）。
-- **避免重复定义**：弱符号可用于提供默认实现，允许用户通过强符号覆盖。
-- **兼容性处理**：弱符号可用于解决不同库中的符号冲突（如旧版 API 的兼容层）。
+- **Dynamic Libraries (.so/.dll)**: Weak symbols allow dynamic libraries to override symbols in the main program (such as plugin mechanisms).
+- **Avoid Duplicate Definitions**: Weak symbols can be used to provide default implementations, allowing users to override them with strong symbols.
+- **Compatibility Handling**: Weak symbols can be used to resolve symbol conflicts in different libraries (such as compatibility layers for older APIs).
 
-使用 `nm` 查看符号类型：
+Use `nm` to view symbol types:
 
 ```bash
-nm your_object_file.o | grep ' T '  # T 表示强符号（函数）
-nm your_object_file.o | grep ' W '  # W 表示弱符号
+nm your_object_file.o | grep ' T '  # T indicates strong symbol (function)
+nm your_object_file.o | grep ' W '  # W indicates weak symbol
 ```
 
-编译器通过语法（是否显式标记 `weak`）和上下文（如初始化状态）决定符号强弱，链接器则依据强弱规则处理符号冲突。弱符号的核心用途是提供灵活的符号覆盖机制。
+The compiler determines symbol strength through syntax (whether explicitly marked as `weak`) and context (such as initialization state), while the linker handles symbol conflicts based on strength rules. The core purpose of weak symbols is to provide a flexible symbol override mechanism.
 
-### 符号解析&重定位 (静态库)
+### Symbol Resolution & Relocation (Static Library)
 
-#### 静态库介绍
+#### Static Library Introduction
 
-迄今为止，我们都是假设链接器读取一组可重定位的目标文件，并把它们链接起来，成为一个可执行文件。实际上，所有的编译系统都提供一种机制，允许将所有相关的目标模块打包成为一个单独的文件，称为**静态共享库**（static shared library），简称静态库，它也可以作为链接器的输入。
+So far, we've assumed that the linker reads a set of relocatable object files and links them together to form an executable file. In fact, all compilation systems provide a mechanism to package all related object modules into a single file, called a **static shared library** (static library for short), which can also be used as input to the linker.
 
 ![image-20201130032046600](assets/image-20201130032046600.png)
 
-静态库，一种称为存档（archive）的特殊文件格式存储在磁盘中。存档文件是一组连接起来的可重定位目标文件的集合，其中每一个模块文件都有一个头部来描述其大小和位置。存档文件名由后缀.a标识。我们可以通过 `ar`命令来创建静态库。如果您是用go工具对目标模块创建静态库，可通过 `go tool pack`来创建。
+Static libraries are stored on disk in a special file format called an archive. An archive file is a collection of connected relocatable object files, where each module file has a header describing its size and position. Archive filenames are identified by the .a suffix. We can create static libraries using the `ar` command. If you're using the go tool to create static libraries for object modules, you can use `go tool pack`.
 
-当链接器链接输出一个可执行文件时，它只拷贝静态库里被应用程序引用的目标模块。静态库提高了常用代码的复用性，一定程度上节省了每个应用程序因为拷贝待复用模块*.o文件所带来的磁盘存储空间的浪费。
+When the linker links to output an executable file, it only copies the object modules from the static library that are referenced by the application. Static libraries improve code reuse and save disk storage space that would be wasted by copying reusable modules to each application.
 
-下面是一个静态链接过程的示意图：
+Here's a diagram of the static linking process:
 
 ![Carnegie Mellon 1 Bryant and O'Hallaron, Computer Systems: A Programmer's  Perspective, Third Edition Linking : Introduction to Computer Systems ppt  download](assets/slide_29.jpg)
 
-main2.c里面调用了vector.h中的函数，这个函数的实现在静态库文件libvector.a中，addvec实现在addvec.o中，multvec实现在multvec.o中，同时main2.c中还使用了libc的io函数，实现包含在libc.a中。现在通过静态链接 `gcc -static -o prog2c main2.o ./libvector.a` 构造一个完整链接的可执行程序，程序加载和运行时无需再执行动态链接。
+main2.c calls functions from vector.h, whose implementations are in the static library file libvector.a. addvec is implemented in addvec.o, and multvec is implemented in multvec.o. main2.c also uses libc's io functions, whose implementations are in libc.a. Now, through static linking `gcc -static -o prog2c main2.o ./libvector.a`, we construct a fully linked executable program that doesn't need to perform dynamic linking during loading and runtime.
 
-链接器会检测到该函数调用addvec是在addvec.o中实现的，所以从libvector.a中只提取addvec.o来进行最后的链接，而不是也将multvec.o也链接过来，这种方式也可以节省存储空间占用。
+The linker detects that the function call to addvec is implemented in addvec.o, so it only extracts addvec.o from libvector.a for final linking, rather than also linking multvec.o. This approach also saves storage space.
 
-#### 符号解析过程
+#### Symbol Resolution Process
 
-**链接器如何使用静态库来符号解析呢？**其实这个过程很简单。
+**How does the linker use static libraries for symbol resolution?** The process is actually quite simple.
 
-在符号解析阶段，链接器从左到右扫描在编译命令上输入的可重定位目标文件和静态库存档文件（命令上列出的.c文件会被转换为对应的.o文件），在这次扫描中，链接器维持一个可重定位目标文件的集合E（这个集合中的文件会被合并起来形成可执行文件），一个未解析的符号（引用了但是尚未定义的符号）集合U，以及一个在前面输入文件中已经定义的符号集合D。初始时，E、U、D都是空集。
+In the symbol resolution phase, the linker scans the relocatable object files and static library archive files listed in the compilation command from left to right (listed .c files are converted to corresponding .o files). During this scan, the linker maintains a set E of relocatable object files (files in this set will be merged to form the executable file), a set U of unresolved symbols (symbols that are referenced but not yet defined), and a set D of symbols already defined in previous input files. Initially, E, U, and D are all empty.
 
-- 对于命令上的每个输入文件f，链接器会判断f是一个目标文件，还是一个存档文件，如果f是一个目标文件，那么链接器会把f添加到E，修改U、D来反映f中的符号定义和引用，并继续处理下一个文件；
-- 如果f是一个静态库存档文件，那么链接器就尝试匹配U中未解析的符号，看看能否在存档文件中找到对应的定义的符号。如果某个存档文件成员m，定义了一个符号来解析U中的一个符号引用，那么就将m加到E中，并且链接器修改U和D来反映m中的符号定义和引用。对存档文件中所有的成员目标文件都反复执行这个过程，直到U和D不再发生变化。在此时，任何不包含在E中的成员目标文件都简单地被丢弃，而链接器将继续处理下一个输入文件；
-- 如果当链接器完成对命令上输入文件的扫描后，U是非空的，表明存在未解析成功的符号，链接器就会输出一个错误并终止。否则，它会合并并重定位E中的目标文件，从而构出完整的可执行程序文件。
+- For each input file f in the command, the linker determines whether f is an object file or an archive file. If f is an object file, the linker adds f to E, modifies U and D to reflect the symbol definitions and references in f, and continues processing the next file;
+- If f is a static library archive file, the linker tries to match unresolved symbols in U to see if it can find corresponding defined symbols in the archive file. If a member m of the archive file defines a symbol that resolves a symbol reference in U, then m is added to E, and the linker modifies U and D to reflect the symbol definitions and references in m. This process is repeated for all member object files in the archive file until U and D no longer change. At this point, any member object files not included in E are simply discarded, and the linker continues processing the next input file;
+- If after the linker completes scanning the input files on the command line, U is non-empty, indicating that there are unresolved symbols, the linker outputs an error and terminates. Otherwise, it merges and relocates the object files in E to construct the complete executable program file.
 
-这种处理方式需注意命令行上的库、目标文件的顺序，否则可能会导致符号解析失败。
+This processing method requires attention to the order of libraries and object files on the command line, otherwise it may lead to symbol resolution failure.
 
-另外，我们这里提到的是将静态库中的目标文件拿出来进行链接，其实链接器还可以做的更好，如只将引用的函数或者变量来做链接，而将其他未引用的部分移除。这样做的好处是减少目标文件的大小，减少将来加载时对宝贵内存资源的浪费。感兴趣可以阅读我的这篇文章：[dead code elimination: a linker&#39;s perspective](https://medium.com/@hitzhangjie/dead-code-elimination-a-linkers-perspective-d098f4b8c6dc)。
+Additionally, we mentioned extracting object files from static libraries for linking, but the linker can do even better, such as only linking referenced functions or variables and removing other unused parts. This reduces the size of the object file and saves precious memory resources during future loading. If interested, you can read my article: [dead code elimination: a linker's perspective](https://medium.com/@hitzhangjie/dead-code-elimination-a-linkers-perspective-d098f4b8c6dc).
 
-#### 重定位过程
+#### Relocation Process
 
-一旦链接器完成了符号解析这一步，它就把代码中的每个引用对应的符号定义在哪个输入模块中的哪个位置。此时，链接器需要做两步：
+Once the linker completes the symbol resolution step, it knows which input module and position each reference in the code corresponds to. At this point, the linker needs to do two things:
 
-- **重定位sections和符号定义**：在这一步中，**链接器将所有相同类型的节（section）合并为同一类型的新的聚合节**。例如，来自输入目标文件的.data节将全部被合并一个节，这个节成为输出的可执行文件的.data节。然后链接器将运行时存储器地址赋值给新的合并后的节，**输入模块定义的的每个节、每个符号定义，也都将得到新分配的运行时地址**。当这一步完成时，程序中的每个指令和全局变量都有唯一的运行时内存地址了。
-- **重定位符号引用*：在这一步中，**链接器修改.text section和.data section中每个符号的引用，使得它们指向正确的运行时地址**。为了执行这一步，链接器依赖于一种称为“**重定位条目（relocation entry）**”的可重定位目标模块中的数据结构，我们接下来将会描述这种数据结构。
+- **Relocate sections and symbol definitions**: In this step, **the linker merges all sections of the same type into a new aggregate section of that type**. For example, .data sections from input object files will all be merged into one section, which becomes the .data section of the output executable file. Then the linker assigns runtime memory addresses to the new merged sections, and **each section and symbol definition defined in the input modules will also get a newly assigned runtime address**. When this step is complete, each instruction and global variable in the program has a unique runtime memory address.
+- **Relocate symbol references**: In this step, **the linker modifies each symbol reference in the .text section and .data section to point to the correct runtime address**. To perform this step, the linker relies on a data structure in relocatable object modules called "**relocation entries**", which we will describe next.
 
-当汇编器生成一个目标模块时，它并不知道数据和代码最终将存放在内存中中的什么位置。它也不知道这个模块引用的任何外部定义的函数或者全局变量的位置。所以，无论何时汇编器遇到对**最终位置未知的目标引用**，它就会生成一个**重定位条目，告诉链接器在将目标文件合并成可执行文件时应如何修改这个引用**。
+When the assembler generates an object module, it doesn't know where the data and code will ultimately be placed in memory. It also doesn't know the location of any externally defined functions or global variables referenced by this module. So, whenever the assembler encounters a **reference to a target whose final location is unknown**, it generates a **relocation entry, telling the linker how to modify this reference when merging the object file into an executable file**.
 
-**.text的指令相关的重定位条目放在.rel.text中，.data已初始化数据的重定位条目放在.rel.data中。**
+**.text instruction-related relocation entries are placed in .rel.text, and .data initialized data relocation entries are placed in .rel.data.**
 
-下面的类型定义Elf32_Rel是ELF重定位条目的格式：
+The following type definition Elf32_Rel is the format of ELF relocation entries:
 
 ```c
 type struct {
@@ -153,87 +153,87 @@ type struct {
 } Elf32_Rel;
 ```
 
-- offset表示待重定位的引用的位置（相对于section .text or .data的偏移量）
-- symbol表示待重定位的引用实际指向的符号
-- type表示待重定位的引用应该使用的重定位类型，告知链接器如何修改新的引用
+- offset indicates the position of the reference to be relocated (relative to section .text or .data)
+- symbol indicates the symbol that the reference to be relocated should actually point to
+- type indicates the relocation type that should be used for the reference to be relocated, telling the linker how to modify the new reference
 
-简言之就是链接器此时遇到一个符号引用，但是这个符号不是定义在当前编译单元内的，就会记录一个重定位条目，等后续链接器重定位时再来修正引用的正确地址。
-好比再说：嘿linker，等你链接完成之后，请在offset偏移量这个位置处给我填上正确的符号地址偏移量，符号地址的计算规则参考重定位类型。
+In short, when the linker encounters a symbol reference that is not defined in the current compilation unit, it records a relocation entry, and later when the linker relocates, it will correct the reference to the correct address.
+It's like saying: Hey linker, after you finish linking, please fill in the correct symbol address offset at the offset position, and the symbol address calculation rule refers to the relocation type.
 
-ELF定义了11种不同类型的重定位类型，有些类型相当神秘，我们只关心其中两种最基本的重定位类型即可：
+ELF defines 11 different types of relocation types, some of which are quite mysterious. We only need to care about two of the most basic relocation types:
 
-- **R_386_PC32：重定位一个使用32位PC相对地址的引用，一个PC相对地址就是相对当前程序计数器（PC）的偏移量**。当CPU执行一条使用PC进行相对寻址的指令时，执行时就会在当前PC值基础上加上这个偏移量，来得到有效地址（如call指令的目标），PC值存储了下一条待执行指令的地址；
-- **R_386_32：重定位一个使用32位绝对地址的引用**。通过绝对寻址，CPU直接使用在指令中编码的32位值作为有效地址，不需要进一步修改；
+- **R_386_PC32**: Relocates a reference using a 32-bit PC-relative address. A PC-relative address is an offset relative to the current program counter (PC). When the CPU executes an instruction using PC-relative addressing, it adds this offset to the current PC value at execution time to get the effective address (such as the target of a call instruction). The PC value stores the address of the next instruction to be executed;
+- **R_386_32**: Relocates a reference using a 32-bit absolute address. With absolute addressing, the CPU directly uses the 32-bit value encoded in the instruction as the effective address, without further modification;
 
-OK，讲到这里，如果不涉及到动态链接库，这部分内容对于理解符号解析和重定位已经比较全面了。然而静态共享库的使用尽管有优势，但是也还是有些弊端的，下面我们介绍下动态共享库的优势，以及在使用动态共享库时，符号解析和重定位具体是如何实现的。
+OK, at this point, if we don't involve dynamic link libraries, this content is quite comprehensive for understanding symbol resolution and relocation. However, although static shared libraries have advantages, they also have some drawbacks. Let's introduce the advantages of dynamic shared libraries and how symbol resolution and relocation are specifically implemented when using dynamic shared libraries.
 
-### 符号解析&重定位 (动态库)
+### Symbol Resolution & Relocation (Dynamic Library)
 
-#### 动态库介绍
+#### Dynamic Library Introduction
 
-前面提了静态库的一些优点，其实它也有明显的缺点，就是各个应用程序复用静态库的时候，会把自己需要的目标文件从静态库中提取出来然后和其他目标文件链接成可执行程序，相当于每个应用程序都或多或少拷贝了一部分代码，代码体积大对磁盘空间、内存空间都会造成浪费。尽管我们曾经提及dead code elimination相关的链接器特性，但是确实还是拷贝了相同的代码。
+We mentioned some advantages of static libraries earlier, but they also have obvious disadvantages. When various applications reuse static libraries, they extract the object files they need from the static library and link them with other object files to form an executable program, which means each application copies some code to some extent. Large code volume wastes both disk space and memory space. Although we mentioned linker features related to dead code elimination, we still copy the same code.
 
-比如对于系统提供的io相关的库，其实没必要每个应用程序都去拷贝到自身，只要能引用这部分代码的同一份实现即可。动态库就是用来解决静态库的这些不足的。
+For example, for system-provided io-related libraries, there's no need for each application to copy them to itself. It's sufficient to reference the same implementation of this code. Dynamic libraries are used to solve these shortcomings of static libraries.
 
-> ps: 严格来说应该用术语动态共享库（dynamic shared library），在某些系统上也称为动态链接库.dll，在Linux下是以*.so为扩展名，经常称为共享库或者动态库。
+> ps: Strictly speaking, we should use the term dynamic shared library. On some systems, it's also called a dynamic link library .dll. On Linux, it has the extension *.so and is often called a shared library or dynamic library.
 
-共享库通过两种方式达成共享的目标：
+Shared libraries achieve sharing through two methods:
 
-- 首先，在文件系统中，对于一个库，只有一个.so文件，所有引用该库的可执行程序都共享这个.so文件中的代码和数据，而不是像静态库的内容那样还要被拷贝和嵌入到引用它们的可执行程序文件中；
-- 其次，在内存中，一个共享库的.text section的同一个副本可以被不同的正在运行的进程共享，联想下通过mmap时可以将指定文件映射到指定内存区，同时还可以限制该内存区的访问权限为“共享访问”还是“排他性访问”；
+- First, in the file system, there is only one .so file for a library, and all executable programs that reference this library share the code and data in this .so file, rather than copying and embedding the content of the static library into the executable program files that reference them;
+- Second, in memory, the same copy of a shared library's .text section can be shared by different running processes. Think about how mmap can map a specified file to a specified memory area, while also restricting the access permissions of that memory area to "shared access" or "exclusive access";
 
-创建静态库使用命令 `ar`，创建动态共享库可使用命令 `gcc -shared -fPIC`来完成。
+Create static libraries using the `ar` command, and create dynamic shared libraries using the `gcc -shared -fPIC` command.
 
-#### lazy binding
+#### Lazy Binding
 
-下面是一个动态链接过程的示意图：
+Here's a diagram of the dynamic linking process:
 
 ![image-20201130032258561](assets/image-20201130032258561.png)
 
-main2.c中使用了vector.h中的函数，对应实现在libvector.so这个共享库中，现在是通过动态链接技术进行链接的，然后生成一个可执行程序。
+main2.c uses functions from vector.h, whose implementations are in the shared library libvector.so. Now we're using dynamic linking technology for linking, and then generating an executable program.
 
-这里的思路是，当创建可执行程序时，静态链接器linker执行部分处理，然后在程序加载时再由加载器loader去调用动态链接器完成最终链接，成为一个完整的可运行程序。
+The idea here is that when creating an executable program, the static linker performs partial processing, and then when the program is loaded, the loader calls the dynamic linker to complete the final linking, becoming a complete runnable program.
 
-- 静态链接器处理逻辑，指的是这个阶段如果有需要多个目标文件可以执行静态链接的，则执行静态链接。这个时候并没有拷贝任何共享库的代码或数据到可执行文件中，而只是拷贝了一些重定位和符号表信息，用来指导后续动态链接器继续完成对libvector.so中定义的符号的引用和重定位操作。
-- 当加载器（kernel的一部分）加载和运行可执行文件时，加载部分链接的可执行文件之后，接着注意到它包含一个.interp section，这个section包含了动态链接器的路径名，动态链接器本身就是一个共享库（如在Linux上为ld-linux.so）。**和加载静态链接的程序所不同的是，加载器此时不再将控制权直接传递给应用程序了，而是先加载并运行这个动态链接器ld-linux.so，先来完成动态链接 **。
+- Static linker processing logic refers to the fact that at this stage, if multiple object files need to be statically linked, static linking is performed. At this time, no shared library code or data is copied to the executable file, only some relocation and symbol table information is copied to guide the subsequent dynamic linker to continue completing the reference and relocation operations for symbols defined in libvector.so.
+- When the loader (part of the kernel) loads and runs the executable file, after loading the partially linked executable file, it notices that it contains an .interp section. This section contains the pathname of the dynamic linker. The dynamic linker itself is a shared library (such as ld-linux.so on Linux). **Unlike loading statically linked programs, the loader no longer passes control directly to the application at this time, but first loads and runs this dynamic linker ld-linux.so to complete dynamic linking**.
 
-**动态链接器会执行下面的重定位操作来完成链接任务：**
+**The dynamic linker performs the following relocation operations to complete the linking task:**
 
-- 加载并重定位libc.so的文本和数据到某个内存段；
-- 加载并重定位libvector.so的文本和数据到另一个内存段；
-- 重定位可执行程序中的引用，将其替换为libc.so和libvector.so定义的符号的地址；
-  这步操作并不是一次性全部执行完成的，而是随着程序执行，访问到了定义在动态库中的引用（数据或者函数)时，实际上对这些内容的访问指令被链接器改写成了对 `.got .got.plt`的访问，首次访问时对应的表项中的地址都不是有效地址，而是会触发动态链接器的介入来完成符号解析（.dynsym），然后再参考.rel.dyn section中的重定位条目进行重定位，将正确地址写入 `.got .got.plt`，下次访问时就不用重复解析了。
+- Load and relocate libc.so's text and data to some memory segment;
+- Load and relocate libvector.so's text and data to another memory segment;
+- Relocate references in the executable program, replacing them with addresses of symbols defined in libc.so and libvector.so;
+  This operation is not completed all at once, but as the program executes, when accessing references (data or functions) defined in the dynamic library, the instructions for accessing these contents are actually rewritten by the linker to access `.got .got.plt`. On first access, the addresses in the corresponding table entries are not valid addresses, but will trigger the intervention of the dynamic linker to complete symbol resolution (.dynsym), and then refer to the relocation entries in the .rel.dyn section to perform relocation, writing the correct address to `.got .got.plt`. On subsequent accesses, there's no need to repeat the resolution.
 
-完成上述操作后，动态链接器将控制传递给应用程序，从这个时候开始，共享库的位置就固定了，并且在进程执行过程中都不会改变。
+After completing the above operations, the dynamic linker passes control to the application. From this point on, the positions of shared libraries are fixed and will not change during the process execution.
 
-#### 位置无关代码
+#### Position Independent Code
 
-动态链接中，与位置无关的代码（PIC，Position Independent Code）就显得非常重要。
+In dynamic linking, Position Independent Code (PIC) becomes very important.
 
-**那为什么位置无关代码这么重要呢？**
+**Why is position independent code so important?**
 
-共享库的一个主要目的就是允许多个正在运行的进程共享内存中相同的库代码，因而节约宝贵的内存资源。那么多个进程是如何共享程序的一个拷贝的呢？
+A main purpose of shared libraries is to allow multiple running processes to share the same library code in memory, thus saving precious memory resources. So how do multiple processes share a copy of the program?
 
-**一种方法是给每个共享库分配一个事先准备好的专用的地址空间片（chunk），然后要求加载器总是在这个地址处加载共享库。**虽然这种方法很简单，但是它也造成了一些严重的问题。
+**One method is to allocate a pre-prepared dedicated address space chunk for each shared library, and then require the loader to always load the shared library at this address.** Although this method is simple, it also causes some serious problems.
 
-- 首先，它对地址空间的使用效率不高，因为即使一个进程不使用这个库，那部分空间还是会被分配出来；
-- 其次，它也难以管理，我们将不得不保证没有chunk重叠，每当一个库修改了之后，我们必须确认它的已分配的chunk还适合它的大小，如果不适合了就要重新分配一个新的chunk。并且如果我们创建了一个新的库，还需要为他分配一个新的chunk。
+- First, it's not efficient in using address space, because even if a process doesn't use this library, that space will still be allocated;
+- Second, it's difficult to manage. We would have to ensure that no chunks overlap. Every time a library is modified, we must confirm that its allocated chunk still fits its size. If it doesn't fit, we have to allocate a new chunk. And if we create a new library, we need to allocate a new chunk for it.
 
-随着时间发展，假设一个系统中有了成百个库、各种库版本，就很难避免地址空间分列成大量小的、未使用而又不能再使用的空洞。甚至更糟糕的是，对每个系统而言，库在内存中的分配都是不同的，这就引起了更令人头痛的管理问题。
+As time goes by, assuming a system has hundreds of libraries and various library versions, it's difficult to avoid the address space being split into many small, unused and no longer usable holes. Even worse, for each system, the allocation of libraries in memory is different, which causes more headache-inducing management problems.
 
-**一种更好的方法是编译库代码，使得不需要链接器修改库代码就可以在任何地址加载和执行这些代码。这样的代码就叫做与位置无关的代码（PIC，Position Independent Code）。**用户可以使用 `gcc -fPIC`生成位置无关代码。
+**A better method is to compile library code so that it can be loaded and executed at any address without the linker modifying the library code. Such code is called Position Independent Code (PIC).** Users can use `gcc -fPIC` to generate position independent code.
 
-在一个IA32系统中，对**同一个目标模块中过程的调用是不需要特殊处理的，因为引用地址是相对PC值的偏移量，已经是PIC了**。然而**对外部定义的过程调用和对全局变量的引用通常不是PIC，它们都要求在链接时符号解析并重定位**。
+In an IA32 system, calls to procedures in the same object module don't need special treatment because the reference address is an offset relative to the PC value, which is already PIC. However, calls to externally defined procedures and references to global variables are usually not PIC, they all require symbol resolution and relocation at link time.
 
-#### PIC数据引用
+#### PIC Data References
 
-编译器通过运用以下事实来生成对全局变量的PIC引用：无论我们在内存中的何处加载一个目标模块（包括共享目标模块），**数据段总是分配成紧随在代码段后面。因此代码段中任何指令和数据段中任何变量之间的距离都是一个运行时常量，与代码段和数据段的物理地址是无关的**。
+The compiler generates PIC references to global variables by using the following fact: No matter where we load an object module (including shared object modules) in memory, **the data segment is always allocated immediately after the code segment. Therefore, the distance between any instruction in the code segment and any variable in the data segment is a runtime constant, independent of the physical addresses of the code and data segments**.
 
-为了运用这个事实，编译器在数据段开始的地方的创建了一个表，叫做**全局偏移表（GOT，Global Offset Table）**。在GOT中，每个被这个目标文件（模块）引用的全局数据对象都有一个条目。编译器还为GOT中每个条目生成一个重定位记录。在加载时，动态链接器会重定位GOT中的每个条目，使得它包含正确的绝对地址。每个引用全局数据的目标文件（模块）都有自己的GOT。
+To use this fact, the compiler creates a table at the beginning of the data segment, called the **Global Offset Table (GOT)**. In the GOT, there is an entry for each global data object referenced by this object file (module). The compiler also generates a relocation record for each entry in the GOT. At load time, the dynamic linker will relocate each entry in the GOT so that it contains the correct absolute address. Each object file (module) that references global data has its own GOT.
 
-> 下一小节会介绍，链接器如何基于重定位记录完成重定位操作。
+> The next section will introduce how the linker completes relocation operations based on relocation records.
 
-在运行时，使用下面形式的代码，通过GOT间接地引用每个全局变量：
+At runtime, each global variable is referenced indirectly through the GOT using code of the following form:
 
 ```asm
 		call L1
@@ -243,16 +243,16 @@ L1:		popl %ebx               ; ebx contains the current PC
 		movl (%eax), %eax
 ```
 
-这里的代码比较有趣，首先call L1将把返回地址（L1地址）入栈，接下来popl %ebx刚好把入栈的返回地址给pop出来到%ebx中，其中$VAROFF是一个常数偏移量，给%ebx增加这个常数偏移量使其指向GOT表中适当的条目，该条目包含数据项的绝对地址。然后通过两条movl指令（间接地通过GOT）加载全局变量的内容到寄存器%eax中。
+This code is quite interesting. First, call L1 pushes the return address (L1 address) onto the stack, then popl %ebx pops the pushed return address into %ebx. $VAROFF is a constant offset, adding this constant offset to %ebx makes it point to the appropriate entry in the GOT table. This entry contains the absolute address of the data item. Then through two movl instructions (indirectly through the GOT), the content of the global variable is loaded into register %eax.
 
-- GOT表项中怎么会包含数据项的绝对地址的呢？动态链接器对GOT表项逐个重定位的时候，会根据指令与数据之前的固定偏移量关系，加上代码段起始物理地址，来算出每个GOT表项的绝对地址；
-- $VAROFF是怎么得到的呢？前面提过了，指令、数据之间的距离是个固定偏移量，这个在静态链接重定位时就已经算出来了，现在只是在指令物理地址上加这个固定偏移量来得到数据的绝对地址而已；
+- How does the GOT table entry contain the absolute address of the data item? When the dynamic linker relocates GOT table entries one by one, it calculates the absolute address of each GOT table entry based on the fixed offset relationship between instructions and data, plus the starting physical address of the code segment;
+- How is $VAROFF obtained? As mentioned earlier, the distance between instructions and data is a fixed offset, which is calculated during static link relocation. Now we just add this fixed offset to the instruction's physical address to get the absolute address of the data;
 
-可以很明显地发现，**访问一个全局变量现在是用了5条指令，而非一条指令，PIC代码有性能缺陷**。此外，还需要一个额外的对GOT的内存引用，而且PIC还需要用一个额外的寄存器来保持GOT条目的地址，在具有大寄存器文件的机器上，这不是一个大问题，然而在寄存器供应不足的IA32系统中，就可能有问题。
+It's obvious that **accessing a global variable now uses 5 instructions instead of one instruction, PIC code has performance defects**. Additionally, an extra memory reference to the GOT is needed, and PIC also needs an extra register to maintain the address of the GOT entry. On machines with large register files, this isn't a big problem, but in IA32 systems with insufficient registers, it may be problematic.
 
-#### PIC函数调用
+#### PIC Function Calls
 
-PIC代码当然也可以用相同的方法来解析外部过程调用：
+PIC code can also use the same method to resolve external procedure calls:
 
 ```asm
 		call L1
@@ -261,75 +261,75 @@ L1: 	        popl %ebx		; ebx contains the current pc
 		call *(%ebx)		; call indirect through the GOT
 ```
 
-不过，**这种方法对每一个运行时过程调用都要求用3条额外指令来完成，性能肯定好不了**。
+However, **this method requires 3 extra instructions for each runtime procedure call, which definitely doesn't perform well**.
 
-> ps：为什么go程序采用静态链接而非动态链接？
+> ps: Why do Go programs use static linking instead of dynamic linking?
 >
-> - 静态链接不存在动态链接库被篡改的问题，相对来说更健壮点；
-> - 也不存在程序启动时还需要动态链接的问题，相对来说启动速度可能也要快点；
-> - 函数调用不存在这里引入的额外多条指令问题，函数调用开销小一点；
+> - Static linking doesn't have the problem of dynamic link libraries being tampered with, so it's relatively more robust;
+> - There's also no need for dynamic linking when the program starts, so the startup speed may be faster;
+> - Function calls don't have the problem of extra multiple instructions introduced here, so function call overhead is smaller;
 >
-> 针对第3点，其实动动脑子也可以优化一下，比如只在第一次借助GOT的时候是多条指令，此时算出来的地址就可以为后续调用复用了。
+> For point 3, we can actually optimize it with some thought. For example, we only need multiple instructions when using the GOT for the first time. At this time, the calculated address can be reused for subsequent calls.
 >
-> 这就是接下来即将提到的“延迟绑定”技术。
+> This is the "lazy binding" technology that will be mentioned next.
 
-与前面方法相比，**延迟绑定（lazy binding）** 更聪明地解决了这里的调用开销问题。**将过程地址的绑定推迟到第一次调用该过程时，第一次调用过程的运行时开销较大，但是其后的每次调用都只会花费一条指令和一个间接的内存引用的开销。**
+Compared to the previous method, **lazy binding** solves the call overhead problem more cleverly. **It postpones the binding of procedure addresses until the first time the procedure is called. The first call to the procedure has a large runtime overhead, but each subsequent call only costs one instruction and one indirect memory reference.**
 
-延迟绑定是通过两个数据结构之间简洁但又有些复杂的交互来实现的，这两个数据结构是**GOT**和**过程链接表（PLT，Procedure Linkage Table）**。如果一个目标文件中有调用定义在共享库中的函数，那么它就会有自己的GOT和PLT，GOT是.data section的一部分，PLT是.text section中的一部分。
+Lazy binding is implemented through a concise but somewhat complex interaction between two data structures: the **GOT** and the **Procedure Linkage Table (PLT)**. If an object file has calls to functions defined in shared libraries, it will have its own GOT and PLT. The GOT is part of the .data section, and the PLT is part of the .text section.
 
-> 注意：也有的编译工具链在组织的时候，会将其组织在独立的sections中，如ELF section **.got .got.plt**。
+> Note: Some compilation toolchains organize them in independent sections, such as ELF sections **.got .got.plt**.
 
-下图是示例程序main2.o的GOT的格式，头三条GOT条目比较特殊：GOT[0]包含.dynamic段的地址，这个段包含了动态链接器用来绑定过程地址的信息，比如符号表的位置和重定位信息。GOT[1]包含定义这个模块的一些信息。GOT[2]包含动态链接器的延迟绑定代码的入口点。
+The following figure shows the format of the GOT of the example program main2.o. The first three GOT entries are special: GOT[0] contains the address of the .dynamic section, which contains information used by the dynamic linker to bind procedure addresses, such as the location of the symbol table and relocation information. GOT[1] contains some information about the module that defines this. GOT[2] contains the entry point of the dynamic linker's lazy binding code.
 
 ![image-20201130061110246](assets/image-20201130061110246.png)
 
-定义在共享库中并被main2.o调用的每个过程在GOT中都会有一个GOT条目，从GOT[3]开始的都是。对于示例程序，我们给出了printf和addvec的GOT条目，printf定义在libc.so中，而addvec定义在libvector.so中。
+Each procedure defined in a shared library and called by main2.o has a GOT entry, starting from GOT[3]. For the example program, we show GOT entries for printf and addvec. printf is defined in libc.so, and addvec is defined in libvector.so.
 
-下图展示了实例程序的PLT。PLT是一个数组，其中每个PLT条目是16字节，第一个条目PLT[0]是一个特殊条目，它跳转到动态链接器中。每个被调用的过程在PLT中都有一个PLT条目，从PLT[1]开始都是。在图中，PLT[1]对应于printf，PLT[2]对应于addvec。
+The following figure shows the PLT of the example program. The PLT is an array, where each PLT entry is 16 bytes. The first entry PLT[0] is a special entry that jumps to the dynamic linker. Each called procedure has a PLT entry in the PLT, starting from PLT[1]. In the figure, PLT[1] corresponds to printf, and PLT[2] corresponds to addvec.
 
-开始时，在程序被动态链接并开始执行后，过程printf和addvec被分别绑定到它们对应的PLT条目的第一条指令上。现在指令中假如存在addvec的调用，有如下形式：
+Initially, after the program is dynamically linked and starts executing, procedures printf and addvec are bound to the first instruction of their corresponding PLT entries. Now if there's a call to addvec in the instructions, it has the following form:
 
 ```asm
 80485bb:	e8 a4 fe ff ff		call 8048464 <addvec>
 ```
 
-当addvec第一次调用时，控制传递到PLT[2]的第1条指令处（地址为8048464），该指令通过GOT[4]执行一个间接跳转。开始时，每个GOT条目包含相应的PLT条目中的pushl这条指令的地址，所以开始时GOT[4]条目中的内容为0x804846a，现在执行 `jmp *GOT[4]`之后，相当于饶了一圈回到了PLT[2]的第2条指令处，这条指令将addvec符号的ID入栈，第3条指令则跳转到PLT[0]。
+When addvec is called for the first time, control is passed to the first instruction of PLT[2] (address 8048464), which executes an indirect jump through GOT[4]. Initially, each GOT entry contains the address of the pushl instruction in the corresponding PLT entry, so initially the content of GOT[4] entry is 0x804846a. Now after executing `jmp *GOT[4]`, it goes around in a circle back to the second instruction of PLT[2]. This instruction pushes the ID of the addvec symbol onto the stack, and the third instruction jumps to PLT[0].
 
-好戏开始了，PLT[0]中的代码将GOT[1]中的标识信息的值入栈，然后通过GOT[2]间接跳转到动态链接器（ld-linux.so）中，动态链接器用两个栈顶参数来确定addvec的位置，然后用这个算出的新地址覆盖掉GOT[4]，并跳过去执行把控制传递给了addvec。
+The show begins. The code in PLT[0] pushes the value of the identification information in GOT[1] onto the stack, then indirectly jumps to the dynamic linker (ld-linux.so) through GOT[2]. The dynamic linker uses the two parameters on the top of the stack to determine the location of addvec, then uses this calculated new address to overwrite GOT[4], and jumps to execute, passing control to addvec.
 
 ![image-20201130061125017](assets/image-20201130061125017.png)
 
-下一次在程序中调用addvec时，控制像前面一样传递给PLT[2]，不过这次通过GOT[4]的间接跳转可以直接将控制传递给addvec了，从此刻起，唯一额外的开销就算是对间接跳转存储器的引用了，再也不会兜一大圈，函数调用效率上有了明显提升。
+The next time addvec is called in the program, control is passed to PLT[2] as before, but this time the indirect jump through GOT[4] can directly pass control to addvec. From this moment on, the only extra overhead is the memory reference for the indirect jump. It no longer goes around in a big circle, and the function call efficiency has been significantly improved.
 
-简单总结，就是说对于动态链接的程序，程序中如果涉及到调用的函数是在共享库中定义的，第一次执行该函数时会通过PLT、GOT的交互来触发ld-linux动态链接操作，完成后会把正确的地址覆盖到GOT[idx]中去，后续通过PLT去 `jmp *GOT[idx]`再次调用该函数时就会直接跳转到函数地址，不用再兜圈子计算了，效率当然会比每次都重定位有质的提升！
+In simple terms, for dynamically linked programs, if the program involves calling functions defined in shared libraries, the first time the function is executed, it will trigger the ld-linux dynamic linking operation through the interaction of PLT and GOT. After completion, it will overwrite the correct address into GOT[idx]. When the function is called again through PLT's `jmp *GOT[idx]`, it will directly jump to the function address without going around in circles to calculate. Of course, the efficiency will be qualitatively improved compared to relocating every time!
 
-### 符号解析&重定位 (运行时)
+### Symbol Resolution & Relocation (Runtime)
 
-前面介绍了静态链接时的符号解析、重定位处理过程，也介绍了程序加载时的动态链接的符号解析、重定位处理过程。
+We've introduced the symbol resolution and relocation processing process during static linking, and also introduced the symbol resolution and relocation processing process during dynamic linking when the program is loaded.
 
-**动态链接除了链接时、加载时的链接，还有运行时链接的情况：**
+**In addition to linking-time and loading-time linking, dynamic linking also has runtime linking situations:**
 
-- 通过 `dlopen`来加载一个共享库；
-- 通过 `dlsym`来解析一个符号；
-- 通过 `dlclose`卸载一个共享库；
+- Load a shared library through `dlopen`;
+- Resolve a symbol through `dlsym`;
+- Unload a shared library through `dlclose`;
 
-这部分简单了解下即可，相信大家即使不深入了解，也能猜到大致的实现方式是怎样的，我们就不过多展开了。
+This part is just for simple understanding. I believe everyone can guess the general implementation method even without in-depth understanding, so we won't expand too much.
 
-### 本文总结
+### Summary
 
-本文开头首先总结了下符号解析&重定位的大致任务，然后我们展开进行了全面系统性的介绍。从符号解析的类型本地符号解析、全局符号解析，到引出如何解决符号多重定义问题、应用场景，我们介绍了符号的强弱规则以及编译器、链接器的处置办法。在有了这些基础之后，我们对静态链接、动态链接过程中的符号解析和重定位进行了非常细致、深入又恰到好处的讲解。我相信读者朋友们看完这篇文章，应该对链接器（静态链接器+动态链接器)的工作原理有了更深入的认识。
+At the beginning of this article, we first summarized the general tasks of symbol resolution & relocation, then we expanded with a comprehensive and systematic introduction. From local symbol resolution and global symbol resolution, to how to solve the problem of multiple symbol definitions and application scenarios, we introduced the strong and weak symbol rules and how compilers and linkers handle them. With these foundations, we provided a very detailed, in-depth, and恰到好处的 explanation of symbol resolution and relocation in the static linking and dynamic linking processes. I believe that after reading this article, readers should have a deeper understanding of how linkers (static linker + dynamic linker) work.
 
-而我们的这种看似漫无目的的学习，尽管看上去这部分内容与调试器无关，但是在编译工具链的理解上又加深了一笔，而且我们排除了各种各样的”符号"的理解不到位的地方，这就是它的价值，我们在后续学习调试器相关的内容时，我们再提到调试符号时，我们也不会再陷入"你说的符号是个什么东西"这样的基础问题中去。
+And our seemingly aimless learning, although it seems that this content is unrelated to debuggers, has deepened our understanding of the compilation toolchain, and we've eliminated various misunderstandings about "symbols". This is its value. When we learn about debugger-related content later, and we mention debug symbols again, we won't fall into basic questions like "what kind of thing is the symbol you're talking about".
 
-### 参考内容
+### References
 
 1. Go: Package objabi, https://golang.org/pkg/cmd/internal/objabi/
 2. Go: Object File & Relocations, Vincent Blanchon, https://medium.com/a-journey-with-go/go-object-file-relocations-804438ec379b
 3. Golang Internals, Part 3: The Linker, Object Files, and Relocations, https://www.altoros.com/blog/golang-internals-part-3-the-linker-object-files-and-relocations/
 4. Computer System: A Programmer's Perspective, Randal E.Bryant, David R. O'Hallaron, p450-p479
-5. 深入理解计算机系统, 龚奕利 雷迎春 译, p450-p479
+5. Understanding Computer Systems, translated by Gong Yili and Lei Yingchun, p450-p479
 6. Linker and Libraries Guide, Object File Format, File Format, Symbol Table, https://docs.oracle.com/cd/E19683-01/816-1386/chapter6-79797/index.html
 7. Linking, https://slideplayer.com/slide/9505663/
 8. Dead Code Elimination: A Linker's Perspective, https://medium.com/@hitzhangjie/dead-code-elimination-a-linkers-perspective-d098f4b8c6dc
 9. Learning Linux Binary Analysis, Ryan O'Neill, p14-15, p18-19
-10. Linux二进制分析, 棣琦 译, p14-15, p18-19
+10. Linux Binary Analysis, translated by Di Qi, p14-15, p18-19
