@@ -1,9 +1,9 @@
 # Preface
 
-我本人好奇心比较强，喜欢刨根问底，2018年开始接触golang，学习阶段使用调试器gdb、delve进行了大量调试分析，有一天突然产生了疑问：**调试器是如何工作的呢**？
+I have a strong curiosity and enjoy getting to the root of things. I started learning Go in 2018, and during my learning phase, I used debuggers like gdb and delve extensively for debugging and analysis. One day, I suddenly wondered: **how do debuggers work**?
 
-如果只是想了解调试器大致的工作原理，这个是比较简单的，但如果想胜任调试器的开发工作，尤其是从0到1开发新的调试器，那就完全是另外一回事了。
+If you just want to understand the general working principles of a debugger, that's relatively simple. But if you want to be competent in debugger development, especially developing a new debugger from scratch, that's a completely different matter.
 
-调试器的设计、实现、调试信息标准也是一个非常庞杂的工程，我希望一窥其中的奥秘，帮助我加深下对软件开发工具链的进一步认识，在学习过程中，也意识到这是一个实践意义非常强、技术含量也比较高、有助于从多方位巩固完善软件开发人员知识体系的方向。所以我希望在工作之余能完成这个工程，并和大家分享。
+The design, implementation, and debugging information standards of debuggers are also a very complex engineering project. I hope to glimpse its mysteries and help deepen my understanding of the software development toolchain. During my learning process, I also realized this is a direction with strong practical significance, high technical content, and helps consolidate and improve software developers' knowledge system from multiple aspects. Therefore, I hope to complete this project in my spare time and share it with everyone.
 
-由于作者本人水平有限，难免有错误或疏漏之处，也希望读者能帮指出问题、协助纠正。
+Due to my limited capabilities, there may be errors or omissions. I hope readers can help point out issues and assist in corrections.
