@@ -1,8 +1,8 @@
-# 调试器基础
+# Debugger Basics
 
-先简要介绍下调试器相关的基础知识，包括：
+Let's briefly introduce the basic knowledge about debuggers, including:
 
-- **目的**, 我们为什么需要一个调试器？
-- **支持**, 支持调试操作需要哪些能力的支持？
-- **安全**, 调试会带来哪些安全风险，又该如何防范？
+- **Purpose**, why do we need a debugger?
+- **Support**, what capabilities are needed to support debugging operations?
+- **Security**, what security risks does debugging bring, and how to prevent them?
 

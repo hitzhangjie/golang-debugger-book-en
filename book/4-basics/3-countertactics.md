@@ -1,31 +1,31 @@
-## 4.3 反调试技术
+## 4.3 Anti-Debugging Techniques
 
-只要付出足够的时间和精力，可以说任何程序都能被逆向。调试器使得理解程序逻辑更加方便了，对心怀恶意的软件逆向人员也不例外。防人之心不可无，君子也要采取战术给软件逆向增加点难度，使恶意工程师越痛苦越好以阻止或者延缓他们弄清程序的工作逻辑。
+With enough time and effort, it can be said that any program can be reverse engineered. Debuggers make it easier to understand program logic, and this applies to malicious software reverse engineers as well. It's better to be safe than sorry - even gentlemen should take tactical measures to increase the difficulty of software reverse engineering, making it as painful as possible for malicious engineers to prevent or delay their understanding of the program's working logic.
 
-鉴于此，可以采取一些步骤，将使恶意工程师很难通过调试器窥视您的程序。
+To this end, you can take some steps that will make it very difficult for malicious engineers to peek at your program through a debugger.
 
-### 4.3.1 系统调用
+### 4.3.1 System Calls
 
 #### 4.3.1.1 Windows
-某些操作系统提供了特殊的系统调用，能指示当前进程是否正在调试器的调试模式下执行。 例如，Windows KERNEL32.DLL导出了一个名为`IsDebuggerPresent()`的函数。 您可以包装一个chk()函数，函数体内使用该系统调用进行检查。
+Some operating systems provide special system calls that can indicate whether the current process is executing in debug mode under a debugger. For example, Windows KERNEL32.DLL exports a function called `IsDebuggerPresent()`. You can wrap a chk() function that uses this system call for checking.
 
 ![img](assets/clip_image002-3995693.png)
 
 ![img](assets/clip_image003-3995693.png)
 
-该窍门是程序启动后立即调用chk()，让检查逻辑在逆向人员设置并执行到断点前先执行。
+The trick is to call chk() immediately after program startup, letting the check logic execute before reverse engineers can set and execute to breakpoints.
 
 ![img](assets/clip_image004-3995693.png)
 
-如果观测到调试器正在调试当前进程，则可以强制程序运行异常、做些诡异的逻辑，把正在调试的人绕晕。 调试器是个独特的工具，因为它使用户可以从中立的角度来观察程序。 通过插入类似chk的代码，可以迫使用户进入一个扭曲的量子宇宙，在该宇宙中，精心构造的诡异行为、输出，可以有效保护您的程序，避免或者延缓被逆向。
+If a debugger is detected debugging the current process, you can force the program to run abnormally or perform some bizarre logic to confuse the person debugging. A debugger is a unique tool because it allows users to observe the program from a neutral perspective. By inserting code like chk, you can force users into a twisted quantum universe where carefully constructed bizarre behaviors and outputs can effectively protect your program from or delay reverse engineering.
 
 #### 4.3.1.2 Linux
 
-在Linux下，也有类似的方式，通常可以借助“`/proc/self/status`”中的“`TracePid`”属性来判断是否有调试器正在调试当前进程。
+On Linux, there are similar methods. You can usually use the "`TracePid`" attribute in "`/proc/self/status`" to determine if a debugger is debugging the current process.
 
-下面是个示例，检查当前进程是否正在被调试。
+Here's an example of checking if the current process is being debugged:
 
-> 被调试程序：
+> Debugged program:
 >
 > ```go
 > package main
@@ -38,7 +38,7 @@
 > }
 > ```
 >
-> 执行调试操作：
+> Debugging operation:
 >
 > ```bash
 > $ dlv debug main.go
@@ -49,7 +49,7 @@
 > dlv> vim-go, pid: 746
 > ```
 >
-> 检查TracePid：
+> Check TracePid:
 >
 > ```bash
 > >cat /proc/746/status | grep TracePid
@@ -58,49 +58,49 @@
 > dlv debug main.go
 > ```
 >
-> 现在我们可以判断出当前进程正在被pid=688的调试器进程调试，并且该调试器是dlv。
+> Now we can determine that the current process is being debugged by a debugger process with pid=688, and that debugger is dlv.
 
-如果不希望程序被调试，就可以在检测到 `TracePid != 0` 时直接退出，同样的这个过程要尽可能快的执行。
+If you don't want the program to be debugged, you can exit directly when `TracePid != 0` is detected. Similarly, this process should be executed as quickly as possible.
 
-#### 4.3.1.3 其他平台
+#### 4.3.1.3 Other Platforms
 
-其他平台下，应该也有对应的解决方法，读者感兴趣可以自行查阅相关资料。
+Other platforms should also have corresponding solutions. Interested readers can look up relevant information themselves.
 
-值得一提的是，前面Windows、Linux平台下的例子，都提及了反调试检查要尽快执行，实际上不一定总能达成效果。后面的示例大家可以看到，调试器启动被调试进程，进程会停在第一条指令处，就是说并没有立即执行完检查并退出。调试人员如果逆向分析能力很强，仍然有机会跳过反调试的检查逻辑。
+It's worth mentioning that in the previous Windows and Linux platform examples, we mentioned that anti-debugging checks should be executed as quickly as possible. In reality, this may not always be achievable. As you'll see in the later examples, when a debugger starts the debugged process, the process will stop at the first instruction, meaning the check and exit haven't been executed immediately. If reverse engineers have strong reverse analysis capabilities, they still have a chance to skip the anti-debugging check logic.
 
-### 4.3.2 移除调试信息
+### 4.3.2 Removing Debug Information
 
-使调试更加困难的一种简单方法是从程序中删除调试信息。可以通过剥离调试信息（使用GNU的strip实用工具等）或通过设置开发工具来生成发行版（release版本）来完成。
+A simple way to make debugging more difficult is to remove debug information from the program. This can be done by stripping debug information (using GNU's strip utility, etc.) or by setting development tools to generate release versions.
 
-一些商业软件公司更喜欢剥离调试信息，并能接受后续诊断过程中额外加载调试信息的性能影响，因为它允许销售工程师执行现场诊断。 当售后工程师进行内部咨询时，他们要做的就是插入调试信息并启动调试器。
+Some commercial software companies prefer to strip debug information and accept the performance impact of loading debug information later during diagnosis, because it allows sales engineers to perform on-site diagnosis. When after-sales engineers conduct internal consultations, all they need to do is insert debug information and start the debugger.
 
-gcc编译器使用选项”**-g**“在其生成的目标代码中插入调试符号信息。不指定该选项，则不输出任何调试信息。
+The gcc compiler uses the "**-g**" option to insert debug symbol information into its generated object code. If this option is not specified, no debug information is output.
 
-如果尝试使用gdb调试它，gdb将提示找不到调试符号“no debugging symbols found”，将使调试人员很难看明白程序的状态、工作方式。
+If you try to debug it with gdb, gdb will prompt that no debugging symbols are found, making it very difficult for debuggers to understand the program's state and working method.
 
 ![img](assets/clip_image005-3995693.png)
 
-缺少调试符号并不能阻止所有人，一些反编译器可以获取机器代码并将其重铸为高级源代码。好消息是这些工具倾向于生成可读性较差的代码。
+Lack of debug symbols won't stop everyone. Some decompilers can take machine code and recast it into high-level source code. The good news is that these tools tend to generate poorly readable code.
 
-### 4.3.3 代码加盐
+### 4.3.3 Code Salting
 
-如果内存占用不是大问题，并且您不介意对性能造成轻微影响，则阻止调试器的一种方法是定期在代码中添加不必要的语句。可以这么说，这使得尝试进行逆向工程的人更容易迷失。
+If memory usage is not a major concern and you don't mind a slight performance impact, one way to prevent debuggers is to periodically add unnecessary statements to the code. You could say this makes it easier for people trying to reverse engineer to get lost.
 
-这样，即使您在程序中附带了调试符号，也很难弄清正在发生的事情（尤其是如果您认为每个语句都有合法目的）。
+This way, even if you include debug symbols in your program, it's difficult to understand what's happening (especially if you think every statement has a legitimate purpose).
 
-这样，我们就达到了相对安全的目的。
+This way, we achieve our relatively secure goal.
 
-### 4.3.4 混合内存模型
+### 4.3.4 Mixed Memory Models
 
-有一些强大的调试器，例如SoftICE，可以在用户模式和内核模式之间轻松切换。但是，很少有调试器可以在两个不同的内存模型之间进行跳转。比较特殊地，Windows下就允许发生这种行为。在Windows上，这种现象通常称为“thunking”，它允许16位代码和32位代码进行混合。
+There are powerful debuggers, such as SoftICE, that can easily switch between user mode and kernel mode. However, few debuggers can jump between two different memory models. Windows is special in this regard. On Windows, this phenomenon is usually called "thunking," which allows 16-bit code and 32-bit code to be mixed.
 
-以下描述了Windows中使用的改进技术：
+The following describes the improved technique used in Windows:
 
 ![img](assets/clip_image006.png)
 
-这种混合内存模型也给调试器调试增加了难度。
+This mixed memory model also increases the difficulty of debugging with debuggers.
 
-### 4.3.5 本节小结
+### 4.3.5 Section Summary
 
-调试器确实是一个定位分析问题的好帮手，但是用在“坏人”手里也可能成为他们攻击正常程序的工具。因此，本节也重点对反调试技术进行了介绍。反调试技术也是一种重要的阻止逆向分析、提高安全性的手段。
+While debuggers are indeed good helpers for locating and analyzing problems, in the hands of "bad guys," they can also become tools for attacking normal programs. Therefore, this section also focused on introducing anti-debugging techniques. Anti-debugging techniques are also an important means of preventing reverse analysis and improving security.
 

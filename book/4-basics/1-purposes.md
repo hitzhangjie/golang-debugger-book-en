@@ -1,29 +1,29 @@
-## 4.1 目的
+## 4.1 Purpose
 
-尽管开发者花费了大量精力来避免自己的代码中引入bug，但是写出bug仍然是一个很平常的事情。开发人员定位代码中的问题时，通常会借助 **Print语句**（如`fmt.Println`） 来打印变量的值，进而推断程序执行结果是否符合预期。在某些更复杂的场景下，打印语句可能难以胜任，调试器会更好地协助我们定位问题。
+Despite developers spending significant effort to avoid introducing bugs in their code, writing bugs is still a common occurrence. When developers need to locate issues in their code, they typically rely on **Print statements** (such as `fmt.Println`) to print variable values and infer whether the program execution results meet expectations. In more complex scenarios, print statements may not be sufficient, and a debugger can better assist us in locating problems.
 
-调试器可以帮助我们控制tracee（被调试进程、线程）的执行，也可以观察tracee的运行时内存、寄存器状态，借此我们可以实现代码的逐语句执行、控制代码执行流程、检查变量值是否符合预期，等等。
+A debugger can help us control the execution of the tracee (the process/thread being debugged) and observe the runtime memory and register states of the tracee. This allows us to implement step-by-step code execution, control code execution flow, check if variable values meet expectations, and more.
 
-我认为调试器对于刚入门的开发者而言，是一个不可缺少的工具，它还能加深对编程语言、内存模型、操作系统的认识。即便是对于一些从业多年的开发者而言，调试器也会是一个有用的帮手。
+I believe that for beginners, a debugger is an indispensable tool that can also deepen their understanding of programming languages, memory models, and operating systems. Even for developers with years of experience, a debugger can be a useful helper.
 
-本书将指导我们如何开发一个面向go语言的调试器，如果读者之前有使用符号级调试器（如gdb、delve等）的经验，那对于理解本书内容将会非常有帮助。
+This book will guide us in developing a debugger for the Go language. If readers have prior experience with symbolic debuggers (such as gdb, delve, etc.), it will be very helpful for understanding the content of this book.
 
-调试器要支持的重要操作，通常包括：
+Important operations that a debugger needs to support typically include:
 
-- 设置断点，在指定内存地址、函数、语句、文件行号处设置断点；
-- 单步执行，单步执行一条指令，单步执行一条语句，或运行到下个断点处；
-- 获取、设置寄存器信息；
-- 获取、设置内存信息；
-- 对表达式进行估值计算；
-- 调用函数；
-- 其他；
+- Setting breakpoints at specified memory addresses, functions, statements, or file line numbers;
+- Single-step execution, executing one instruction at a time, one statement at a time, or running to the next breakpoint;
+- Getting and setting register information;
+- Getting and setting memory information;
+- Evaluating expressions;
+- Calling functions;
+- Others;
 
-> ps：go被广泛应用于微服务开发，如何在微服务架构下方便地对微服务进行调试呢？如果是一个单体应用，我们还可以通过跟踪多个线程、协程的状态来了解全貌，那如果当处理过程被分解到了多个不同的微服务上时，又如何通过调试器来完成整个处理过程的调试呢？
+> ps: Go is widely used in microservice development. How can we conveniently debug microservices in a microservice architecture? If it's a monolithic application, we can still understand the whole picture by tracking the states of multiple threads and coroutines. But when the processing is decomposed into multiple different microservices, how can we debug the entire processing flow through a debugger?
 >
-> 对于线上服务，这种方式可应用的空间会比较小，因为其会对性能影响比较大，且容器平台必须放开调试相关的安全设置，这意味着可能存在更多的安全风险。通过opentelemetry来观测线上服务的metrics、logging、tracing数据应该更有效。
+> For online services, this approach has limited applicability because it has a significant performance impact, and the container platform must relax security settings related to debugging, which means there may be more security risks. Using OpenTelemetry to observe metrics, logging, and tracing data of online services should be more effective.
 >
-> 但是对开发阶段的服务，这种方式就有比较大的优势了，opentelemetry等解决方案存在较明显的延迟，对于及时调试并不算一种很好的解决方案。如果能在一个单点完成对整个微服务上下游的调试，那就太棒了。能做到吗？solo.io打造了 [**squash**](https://squash.solo.io/) 这款微服务架构下的调试器。
+> However, for services in the development phase, this approach has significant advantages. Solutions like OpenTelemetry have noticeable latency, which isn't a good solution for timely debugging. If we could debug the entire microservice upstream and downstream at a single point, that would be great. Is it possible? Solo.io has created [**Squash**](https://squash.solo.io/), a debugger for microservice architectures.
 >
-> 本书最后，也会简单解释下squash的实现思路，看看别人是怎么做到的 :)
+> At the end of this book, we'll also briefly explain the implementation approach of Squash to see how others have achieved this :)
 
-本书后续章节会介绍如何实现上述操作，如果对调试器内部工作原理好奇，那就请继续吧。
+The subsequent chapters of this book will introduce how to implement the above operations. If you're curious about how debuggers work internally, please continue reading.
