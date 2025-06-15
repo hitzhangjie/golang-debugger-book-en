@@ -1,16 +1,16 @@
 # Terms
 
-在本书中，我们将介绍编译器、链接器、操作系统、调试器和调试信息标准，以及软件开发等方面的知识，使用到的术语会非常多。在此处列出常见重要术语，以便读者方便地查找。
+In this book, we will introduce knowledge about compilers, linkers, operating systems, debuggers, debugging information standards, and software development. There will be many terms used. Here we list common important terms for readers' convenient reference.
 
 | **Term**                   | **Description**                                              |
 | :------------------------- | :----------------------------------------------------------- |
-| Source                     | 源代码，如go语言编写的源代码                                 |
-| Compiler                   | 编译器，编译源代码为目标文件                                 |
-| Linker                     | 链接器，将目标文件、共享库、系统启动代码链接到一起构建可执行程序 |
-| Debugger                   | 调试器，跟踪正在运行的进程或者装载一个core文件，加载程序或core文件调试符号信息，探查、修改、控制进程运行时状态，如暂停执行并查看内存、寄存器 |
-| DWARF                      | DWARF，是一种调试信息标准，指导编译器将调试信息生成到目标文件中，指导链接器合并存储在多个目标文件中的调试信息，调试器将加载此调试信息。简言之，DWARF用来协调编译器、链接器和调试器之间的工作 |
-| Debugger types             | 通常，调试器可以分为两种类型：指令级调试器和符号级调试器     |
-| Instruction level debugger | 指令级调试器，其操作的对象是机器指令。通过处理器指令patch技术就可以实现指令级调试，不需要调试符号信息。它仅适用于指令或汇编语言级别的操作，不支持源代码级别的操作。 |
-| Symbol level debugger      | 符号级调试器，其操作的对象不仅是机器指令，更重要的是支持源代码级的操作。它可以提取和解析调试符号信息，建立内存地址、指令地址和源代码之间的映射关系，支持在源代码语句上设置断点的时候，将其转换为精确的机器指令断点，也支持其他方便的操作 |
-| Tracee                     | 泛指被调试的进程，准确地讲，tracee指的是被调试器跟踪的线程。一个被调试器调试的进程也可能是多线程程序，因此如果需要对其中的多个线程进行调试跟踪，那么就存在多个tracee |
-| Tracer                     | 泛指调试器对应的进程，准确地将，（以Linux为例）tracer指的是通过ptrace_attach系统调用与tracee建立跟踪、被跟踪关系的调试器中的线程。Linux内核要求ptrace attach之后的后续ptrace请求必须来自发起ptrace attach请求的线程，因此Linux下的调试器实现往往会有一个tracer，它负责跟踪被调试进程中的多个tracee |
+| Source                     | Source code, such as code written in Go language             |
+| Compiler                   | Compiler, compiles source code into object files             |
+| Linker                     | Linker, links object files, shared libraries, and system startup code together to build executable programs |
+| Debugger                   | Debugger, tracks running processes or loads a core file, loads program or core file debugging symbol information, explores, modifies, and controls process runtime state, such as pausing execution and viewing memory and registers |
+| DWARF                      | DWARF is a debugging information standard that guides compilers to generate debugging information into object files, guides linkers to merge debugging information stored in multiple object files, and debuggers to load this debugging information. In short, DWARF is used to coordinate work between compilers, linkers, and debuggers |
+| Debugger types             | Generally, debuggers can be divided into two types: instruction-level debuggers and symbol-level debuggers |
+| Instruction level debugger | Instruction-level debugger, which operates on machine instructions. Instruction-level debugging can be implemented through processor instruction patching technology without requiring debugging symbol information. It is only suitable for instruction or assembly language level operations and does not support source code level operations. |
+| Symbol level debugger      | Symbol-level debugger, which operates not only on machine instructions but more importantly supports source code level operations. It can extract and parse debugging symbol information, establish mapping relationships between memory addresses, instruction addresses, and source code, support converting source code statement breakpoints into precise machine instruction breakpoints, and support other convenient operations |
+| Tracee                     | Generally refers to the process being debugged. More precisely, tracee refers to the thread being tracked by the debugger. A process being debugged may also be a multi-threaded program, so if multiple threads need to be debugged and tracked, there will be multiple tracees |
+| Tracer                     | Generally refers to the process corresponding to the debugger. More precisely (taking Linux as an example), tracer refers to the thread in the debugger that establishes a tracking relationship with the tracee through the ptrace_attach system call. The Linux kernel requires that subsequent ptrace requests after ptrace attach must come from the thread that initiated the ptrace attach request, so Linux debugger implementations often have a tracer that is responsible for tracking multiple tracees in the debugged process |
