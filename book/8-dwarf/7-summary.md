@@ -1,24 +1,24 @@
-## 本章总结
+## Chapter Summary
 
-DWARF的基本概念非常简单：
+The basic concepts of DWARF are very simple:
 
-- 程序被描述为“**DIE节点构成的树**”，以紧凑的语言和与机器无关的方式表示源码中的各种函数、数据和类型；
-- “**行号表**”提供了可执行指令地址和生成它们的源码之间的映射关系；
-- “**CFI（调用帧信息表）**”描述了如何虚拟地展开调用栈；
-- 考虑到DWARF需要针对**多种编程语言**和**不同的机器架构**表达许多不同的细微差别，因此Dwarf中也有很多微妙之处。
+- Programs are described as a "**tree of DIE nodes**", representing various functions, data, and types in the source code in a compact, machine-independent manner;
+- The "**Line Number Table**" provides a mapping between executable instruction addresses and the source code that generated them;
+- The "**CFI (Call Frame Information Table)**" describes how to virtually unwind the call stack;
+- Given that DWARF needs to express many different nuances for **multiple programming languages** and **different machine architectures**, there are also many subtleties in DWARF.
 
-以gcc为例，通过选项-g “**gcc -g -c filename.c**” 能够生成DWARF调试信息并将其存储到目标文件filename.o的调试信息相关的section中。go程序构建时则是会默认生成调试信息。
+Taking gcc as an example, using the option -g "**gcc -g -c filename.c**" can generate DWARF debugging information and store it in the debugging information-related sections of the target file filename.o. Go programs, on the other hand, generate debugging information by default during build.
 
 ![img](assets/clip_image012.png)
 
-通过使用 “**readelf -w**” 能够读取、显示所有生成的DWARF调试信息，也可以指定特定的section来加载特定的DWARF调试信息，如 “**readelf -wl**” 只加载 .debug_line 行号表信息。
+By using "**readelf -w**", you can read and display all generated DWARF debugging information, or specify a particular section to load specific DWARF debugging information, such as "**readelf -wl**" to load only the .debug_line line number table information.
 
 ![img](assets/clip_image013.png)
 
-本章已经详细介绍了DWARF对编程语言中不同程序构造的描述，个别的还提供了完整的示例并结合计算过程进行了详细讲解。希望读者已经搞明白了DWARF的大致工作原理。
+This chapter has detailed how DWARF describes different program constructs in programming languages, with some providing complete examples and detailed explanations along with computational processes. It is hoped that readers now understand the general working principles of DWARF.
 
-本章先是介绍了调试信息标准DWARF如何描述程序的不同构造，包括数据结构、编译单元、函数、调用栈、行号表等等，然后我们又以go-delve/delve中DWARF解析相关的代码进行了一定的分析、应用，来帮助大家更好地认识DWARF的实际价值和用途。
+This chapter first introduced how the debugging information standard DWARF describes different constructs of a program, including data structures, compilation units, functions, call stacks, line number tables, etc. Then, we analyzed and applied the DWARF parsing-related code in go-delve/delve to help everyone better understand the actual value and uses of DWARF.
 
-尽管我们提供了一些go-delve/delve中DWARF相关的测试用例，但是和实现一个真正的符号级调试器而言，这也只能算是DWARF应用的一点皮毛而已。真正实现的时候，我们需要更加复杂的DWARF操作，甚至要对go的设计实现非常精通，我们才能实现一个真正可用的符号级调试器。
+Although we provided some DWARF-related test cases from go-delve/delve, compared to implementing a true symbolic debugger, this is only scratching the surface of DWARF applications. In actual implementation, we need more complex DWARF operations and even a deep understanding of Go's design and implementation to create a truly usable symbolic debugger.
 
-让我们带着储备的基础知识以及实现一个符号级调试器的“野心”，一起进入下一章吧。
+Let's move on to the next chapter with our foundational knowledge and the "ambition" to implement a symbolic debugger.

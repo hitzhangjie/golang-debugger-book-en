@@ -1,69 +1,69 @@
-## 描述可执行代码
+## Describing Executable Code
 
-前面介绍了DIE如何描述数据和类型的，也了解了如何对数据位置进行描述，这个小节继续看下如何描述可执行代码。这部分我们主要介绍下对函数和编译单元的描述。
+In the previous sections, we discussed how DIEs describe data and types, and how to describe data locations. This section will continue to explore how to describe executable code. We will mainly introduce the description of functions and compilation units.
 
-### 描述函数
+### Describing Functions
 
-不同编程语言、开发者对函数的叫法也不完全一致，带返回值的函数（function)和不带返回值的例程（subroutine)，我们将其视作同一个事物的两个不同变体，DWARF中使用DW_TAG_subprogram来描述它们。该DIE具有一个名称，一个三元组表示的源代码中的位置(DW_AT_decl_file, DW_AT_del_line:)，还有一个指示该子程序是否在外部（编译单元）可见的属性(DW_AT_external)。
+Different programming languages and developers may have varying terms for functions, such as functions with return values (function) and routines without return values (subroutine). We consider them as two different variants of the same thing, and DWARF uses `DW_TAG_subprogram` to describe them. This DIE has a name, a triplet representing the location in the source code (`DW_AT_decl_file`, `DW_AT_del_line`), and an attribute indicating whether the subprogram is visible externally (compilation unit) (`DW_AT_external`).
 
-> 在不同的编程语言中，函数有不同的术语表示，如routine, subroutine, subprogram, function, method or procedure，参考：https://en.wikipedia.org/wiki/Subroutine。这里不深究细节上的差异，明白DW_AT_subprogram是用来描述函数的就可以。
+> In different programming languages, functions have different terms, such as routine, subroutine, subprogram, function, method, or procedure. For more details, refer to: https://en.wikipedia.org/wiki/Subroutine. We won't delve into the details of these differences here, just understand that `DW_AT_subprogram` is used to describe functions.
 
-#### 函数地址范围
+#### Function Address Range
 
-函数DIE具有属性 `DW_AT_low_pc`、`DW_AT_high_pc`，以给出函数占用的内存地址空间的上下界。 在某些情况下，函数的内存地址可能是连续的，也可能不是连续的。如果不连续，则会有一个内存范围列表。一般DW_AT_low_pc的值为函数入口点地址，除非明确指定了另一个地址。
+The function DIE has attributes `DW_AT_low_pc` and `DW_AT_high_pc` to give the upper and lower bounds of the memory address space occupied by the function. In some cases, the memory address of the function may be continuous or not. If not continuous, there will be a list of memory ranges. Generally, the value of `DW_AT_low_pc` is the function entry point address, unless another address is explicitly specified.
 
-#### 函数返回值类型
+#### Function Return Type
 
-函数的返回值类型由属性 `DW_AT_type` 描述。 如果没有返回值，则此属性不存在。如果在此函数的相同范围内定义了返回类型，则返回类型DIE将作为此函数DIE的兄弟DIE。
+The return type of the function is described by the attribute `DW_AT_type`. If there is no return value, this attribute does not exist. If the return type is defined within the same scope as this function, the return type DIE will be a sibling DIE of this function DIE.
 
-> ps: 实际上用Go进行测试，会发现Go编译工具链并没有使用DW_AT_type来作为返回值类型，因为Go支持多返回值，仅靠这一个属性是不够的。所以Go中采用了其他的解决方案，下面会介绍到。
+> Note: In practice, testing with Go, it is found that the Go compilation toolchain does not use `DW_AT_type` for the return type, as Go supports multiple return values, and this attribute alone is insufficient. Therefore, Go uses other solutions, which will be introduced below.
 
-#### 函数形参列表
+#### Function Parameter List
 
-函数可能具有零个或多个形式参数，这些参数由DIE `DW_TAG_formal_parameter` 描述，这些形参DIE的位置被安排在函数DIE之后，并且各形参DIE的顺序按照形参列表中出现的顺序，尽管参数类型的DIE可能会散布。 通常，这些形式参数存储在寄存器中。
+A function may have zero or more formal parameters, described by the DIE `DW_TAG_formal_parameter`. These parameter DIEs are placed after the function DIE, and the order of the parameter DIEs follows the order in which they appear in the parameter list, although the parameter type DIEs may be scattered. Typically, these formal parameters are stored in registers.
 
-#### 函数局部变量
+#### Function Local Variables
 
-函数主体可能包含局部变量，这些变量由DIE `DW_TAG_variables` 在形参DIE之后列出。通常这些局部变量在栈中分配。
+The function body may contain local variables, listed by the DIE `DW_TAG_variables` after the parameter DIEs. Usually, these local variables are allocated on the stack.
 
-#### 词法块
+#### Lexical Blocks
 
-大多数编程语言都支持词法块，函数中可能有一些词法块，可以用DIE `DW_TAG_lexcical_block` 来描述。 词法块也可以包含变量和词法块DIE。
+Most programming languages support lexical blocks. A function may have some lexical blocks, which can be described by the DIE `DW_TAG_lexcical_block`. Lexical blocks can also contain variable and lexical block DIEs.
 
-#### 示例说明
+#### Example Explanation
 
-下面是一个描述C语言函数的示例，可以看到有个名字为strndup的类型为DW_TAG_subprogram的 `DIE <5>`，这个就是DIE是描述函数strndup的DIE；这个C函数的返回值类型由DW_AT_type属性最终确定为*char，1个4字节的指针；继续看下去我们看到了两个形参s、n各自对应的类型为DW_TAG_formal_parameter的DIEs，其中s最终由属性可以确定是const char *类型，而n是unsigned int类型，s、n在内存中的位置分别为fbreg+0，fbreg+4的位置。
+Below is an example describing a C language function. You can see a DIE `<5>` named `strndup` of type `DW_TAG_subprogram`, which is the DIE describing the function `strndup`. The return type of this C function is determined by the `DW_AT_type` attribute to be `*char`, a 4-byte pointer. Continuing, we see two parameter DIEs of type `DW_TAG_formal_parameter` corresponding to the parameters `s` and `n`, where `s` is determined to be of type `const char *` and `n` is of type `unsigned int`. The positions of `s` and `n` in memory are at `fbreg+0` and `fbreg+4`, respectively.
 
 <img alt="dwarf_desc_code" src="assets/clip_image009.png" width="480px" />
 
-生成的DWARF调试信息如下所示：
+The generated DWARF debugging information is shown below:
 
 <img alt="dwarf_4_func" src="assets/clip_image010.png" width="480px"/>
 
-该示例取自DWARF v4中章节5.3.3.1.1~5.3.3.1.6，这个示例并不复杂，作者也已经对关键信息做了高亮，结合前面讲的内容，读者理解起来应该也不困难。如果您确实没看懂，可以看下DWARF v4中相关章节的详细描述。
+This example is taken from DWARF v4, sections 5.3.3.1.1 to 5.3.3.1.6. This example is not complex, and the author has highlighted the key information. Combined with the previous content, readers should not find it difficult to understand. If you still don't understand, you can refer to the detailed description in the relevant sections of DWARF v4.
 
-### 编译单元
+### Compilation Unit
 
-大多数程序包含多个源文件。 在生成程序时，每个源文件都被视为一个独立的编译单元，并被编译为独立的*.o文件（例如C），然后链接器会将这些目标文件、系统特定的启动代码、系统库链接在一起以生成完整的可执行程序 。
+Most programs contain multiple source files. When generating a program, each source file is treated as an independent compilation unit and compiled into an independent `*.o` file (e.g., in C). The linker then links these object files, system-specific startup code, and system libraries together to generate the complete executable program.
 
-> 注：go中就不是每个源文件作为一个编译单元，而是将package作为一个编译单元。
+> Note: In Go, each source file is not a compilation unit; instead, the package is considered a compilation unit.
 
-DWARF中采用了C语言中的术语“编译单元（compilation unit）”作为DIE的名称 `DW_TAG_compilation_unit`。 DIE包含有关编译的常规信息，包括源文件对应的目录和文件名、使用的编程语言、DWARF信息的生产者，以及有助于定位行号和宏信息的偏移量等等。
+DWARF uses the term "compilation unit" from C language as the name for the DIE `DW_TAG_compilation_unit`. The DIE contains general information about the compilation, including the directory and filename of the source file, the programming language used, the producer of the DWARF information, and offsets that help locate line numbers and macro information, etc.
 
-如果编译单元占用了连续的内存（即，它会被装入一个连续的内存区域），那么该单元的低内存地址和高内存地址将有值，即属性：低地址DW_AT_low_pc，高地址DW_AT_high_pc。 这有助于调试器更轻松地确定特定地址处的指令是由哪个编译单元生成的。如果编译单元占用的内存不连续，则编译器和链接器将提供代码占用的内存地址列表。
+If the compilation unit occupies continuous memory (i.e., it is loaded into a continuous memory area), the low and high memory addresses of the unit will have values, i.e., attributes: low address `DW_AT_low_pc`, high address `DW_AT_high_pc`. This helps the debugger more easily determine which compilation unit generated the instruction at a specific address. If the compilation unit occupies non-continuous memory, the compiler and linker will provide a list of memory addresses occupied by the code.
 
-每个编译单元都由一个“**公共信息条目CIE（Common Information Entry）**”表示，编译单元中除了CIE以外，还包含了一系列的**帧描述条目FDE（Frame Description Entrie）**。
+Each compilation unit is represented by a "**Common Information Entry (CIE)**", and besides the CIE, the compilation unit also contains a series of **Frame Description Entries (FDE)**.
 
-### Go多值返回
+### Go Multiple Return Values
 
-最后，关于Go的一点特殊说明，在描述返回值类型时，Go并不是使用属性DW_AT_type。
+Finally, a special note about Go: when describing the return type, Go does not use the attribute `DW_AT_type`.
 
-下图展示的是C语言中采取的方式，C语言编译器采取了这里DWARF标准推荐的方式，如**形参列表通过DW_TAG_former_parameter来说明，返回值类型通过DW_AT_type来说明，如果没有返回值则无此属性**。
+The figure below shows the approach taken in C language. The C compiler adopts the method recommended by the DWARF standard here, such as **parameter lists being described by `DW_TAG_former_parameter`, and return types by `DW_AT_type`. If there is no return value, this attribute does not exist.**
 
 <img alt="dwarf_desc_func" src="assets/dwarf-c.png" width="640px" />
 
-但是，Go语言和C相比有特殊之处，**Go需要****要支持多值返回**，所以仅用DW_AT_type无法对返回值列表充分描述。我们可以写测试程序验证，golang v1.15中并没有使用DWARF规范中推荐的DW_AT_type来说明返回值类型。golang中对返回值的表示，和参数列表中参数一样，仍然是通过DW_TAG_formal_parameter来描述的，但是会通过属性DW_AT_variable_parameter来区分参数属于形参列表或返回值列表，为0(false)表示是形参，为1(true)表示是返回值。
+However, Go language has special characteristics compared to C. **Go needs to support multiple return values**, so using `DW_AT_type` alone cannot fully describe the return value list. We can write a test program to verify that in Go v1.15, the recommended `DW_AT_type` in the DWARF specification is not used to describe the return type. In Go, the representation of return values, like the parameters in the parameter list, is still described by `DW_TAG_formal_parameter`, but it distinguishes whether the parameter belongs to the parameter list or the return value list through the attribute `DW_AT_variable_parameter`. A value of 0 (false) indicates it is a parameter, and 1 (true) indicates it is a return value.
 
-### 本节小结
+### Summary of This Section
 
-本节介绍了DWARF如何对可执行代码相关的程序构造进行描述，如函数、编译单元等，最后指出了Go语言函数支持多值返回时这里的返回值描述的特殊之处。读到这里，相信读者已经对DWARF如何描述可执行程序有了更深入的认识。
+This section introduced how DWARF describes program constructs related to executable code, such as functions and compilation units. Finally, it pointed out the special aspects of describing return values in Go language functions that support multiple return values. By now, readers should have a deeper understanding of how DWARF describes executable programs.

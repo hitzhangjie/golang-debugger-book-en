@@ -1,20 +1,20 @@
-## DWARF解析及应用
+## DWARF Parsing and Application
 
-前面我们系统性介绍了DWARF调试信息标准的方方面面，它是什么，由谁生成，它如何描述不同的数据、类型、函数，如何描述指令地址与源码位置的映射关系，如何展开调用栈，以及具体的设计实现，等等，可以说我们对DWARF的那些高屋建瓴的设计，已经有了一定的认识。
+Previously, we systematically introduced all aspects of the DWARF debugging information standard: what it is, who generates it, how it describes different data, types, and functions, how it maps instruction addresses to source code locations, how it unwinds the call stack, and the specific design and implementation, etc. We can say that we now have a certain understanding of those high-level designs of DWARF.
 
-接下来就要准备实践阶段了，在进入下一章开始开发之前，我们先了解下当前go的主流调试器go-delve/delve中对DWARF数据的读写支持，然后我们写几个测试用例验证下DWARF可以帮助我们获取到哪些信息。
+Next, we are about to enter the practical stage. Before we start development in the next chapter, let's first understand the current support for reading and writing DWARF data in the mainstream Go debugger go-delve/delve, and then write some test cases to verify what information DWARF can help us obtain.
 
-### DWARF解析
+### DWARF Parsing
 
-介绍下[go-delve/delve](https://github.com/go-delve/delve)中的DWARF解析相关的代码，这里简单介绍下相关package的作用和使用方法，在后续小节中将有更详细的使用。
+Let's introduce the DWARF parsing related code in [go-delve/delve](https://github.com/go-delve/delve). Here is a brief introduction to the purpose and usage of the relevant packages, with more detailed usage in the following sections.
 
-这里的介绍采用的delve源码版本为：commit cba1a524。您可以检出delve的源码的对应版本，来进一步深入了解，我们先跟随作者的节奏来快速了解。
+The delve source code version used here is: commit cba1a524. You can check out the corresponding version of delve's source code for further study. Let's quickly get an overview following the author's pace.
 
-#### 目录结构
+#### Directory Structure
 
-我们先看下delve中DWARF相关的代码，这部分代码位于项目目录下的pkg/dwarf目录下，根据描述的DWARF信息的不同、用途的不同又细分为了几个不同的package。
+Let's first look at the code related to DWARF in delve. This part of the code is located in the pkg/dwarf directory of the project. According to the different types and purposes of DWARF information described, it is further divided into several different packages.
 
-我们用tree命令来先试下pkg/dwarf这个包下的目录及文件列表：
+Let's use the tree command to check the directory and file list under the pkg/dwarf package:
 
 ```go
 ${path-to-delve}/pkg/dwarf/
@@ -70,32 +70,32 @@ ${path-to-delve}/pkg/dwarf/
 11 directories, 37 files
 ```
 
-#### 功能说明
+#### Function Description
 
-对上述package的具体功能进行简单陈述：
+A brief description of the specific functions of the above packages:
 
-| package      | 作用及用途                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| package      | Purpose and Usage |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| dwarfbuilder | 实现了一个Builder，通过该Builder可以方便地生成不同代码结构对应的DWARF调试信息，如New()返回一个Builder并初始设置DWARF信息的header字段，然后通过返回的builder增加编译单元、数据类型、变量、函数等等。`<br>`可以说，这个Builder为快速为源码生成对应的调试信息提供了很大遍历。但是这个package对于实现调试器而言应该是没多大用处的，但是对于验证go编译工具链如何生成调试信息很有帮助。一旦能认识到go编译工具链是如何生成DWARF调试信息的，我们就可以进一步了解到该如何去解析、应用对应的调试信息。`<br>`这个package的作用更多地是用于学习、验证DWARF调试信息生成和应用的。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| frame        | .[z]debug_frame中的信息可以帮助构建CFI (Canonical Frame Information)，指定任意指令地址，我们便可以借助CFI计算出当前的调用栈。`<br>`DWARF信息中的编译单元可能压缩了多个go源文件，每个编译单元都以CIE (Common Information Entry) 开始，然后接下来是一系列的FDE (Frame Description Entry)。`<br>`这里定义了类型CommonInformationEntry、FrameDescriptionEntry用来分别表示CIE、FDE。FDE里面引用CIE，CIE中包含了初始指令序列，FDE中包含了自己的指令序列，结合CIE、FDE可以构建出完整的CFI表。`<br>`为了方便判断某个指令地址是否在某个FDE范围内，类型FrameDescriptionEntry中定义了方法Cover，还提供了Begin、End来给出该FDE的范围，此外它还定义了方法EstablishFrame通过状态机执行CIE、FDE中的指令序列来按需构建CFI表的全部或者一部分，方便我们计算CFA (Canonical Frame Address) ，有了它可以进一步计算出被调函数的返回地址。`<br>`有了这个返回地址，它实际是个指令地址，我们就可以计算出对应的源码位置（如文件名、行号、函数名）。将这个返回地址继续作为指令地址去迭代处理，我们就可以计算出完整的调用栈。`<br><br>`**注意：FDE中的begin、end描述的是创建、销毁栈帧及其存在期间的指令序列instructions的地址范围，详见DWARF v4 standard。**`<br>`此外还定义了类型FrameDescriptionEntries，它实际上是一个FDE的slice，只是增加了一些帮助函数，比如FDEForPC用于通过指令地址查询包含它的FDE。`<br>`每个函数都有一个FDE，每个函数的每条指令都是按照定义时的顺序来安排虚拟的内存地址的，不存在一个函数的FDE的指令范围会包括另一个函数的FDE的指令范围的情况）。 |
-| godwarf      | 这个包提供了一些基础的功能，addr.go中提供了DWARF v5中新增的.[z]debug_addr的解析能力。`<br>`sections.go中提供了读取不同文件格式中调试信息的功能，如GetDebugSectionElf能从指定elf文件中读取指定调试section的数据，并且根据section数据是否压缩自动解压缩处理。`<br>`tree.go提供了读取DIE构成的Tree的能力，一个编译单元如果不连续的话在Tree.Ranges中就存在多个地址范围，当判断一个编译单元的地址范围是否包含指定指令地址时就需要遍历Tree.Ranges进行检查，Tree.ContainsPC方法简化了这个操作。Tree.Type方法还支持读取当前TreeNode对应的类型信息。`<br>`type.go中定义了对应go数据类型的一些类型，包括基本数据类型BasicType以及基于组合扩展的CharType、UcharType、IntType等，也包括一些组合类型如StructType、SliceType、StringType等，还有其他一些类型。这些类型都是以DIE的形式存储在.[z]debug_info中的。tree.go中提供了一个非常重要的函数ReadType，它能从DWARF数据中读取定义在指定偏移量处的类型信息，并在对应类型中通过reflect.Kind来建立与go数据类型的对应关系，以后就可以很方便地利用go的reflect包来创建变量并赋值。                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| line         | 符号级调试很重要的一点是能够在指令地址与源文件名:行号之间进行转换，比如添加给语句添加断点的时候要转化成对指令地址的指令patch，或者停在某个断点处时应该显示出当前停在的源代码位置。行号表就是用来实现这个转换的，行号表被编码为一个字节码指令流，存储在.[z]debug_line中。`<br>`每个编译单元都有一个行号表，不同的编译单元的行号表数据最终会被linker合并在一起。每个行号表都有固定的结构以供解析，如header字段，然后后面跟着具体数据。`<br>`line_parser.go中提供了方法ParseAll来解析.[z]debug_line中的所有编译单元的行号表，对应类型DebugLines表示，每个编译单元对应的行号对应类型DebugLineInfo。DebugLineInfo中很重要的一个字段就是指令序列，这个指令序列也是交给一个行号表状态机去执行的，状态机实现定义在state_machine.go中，状态机执行后就能构建出完整的行号表。`<br>`有了完整的行号表，我们就可以根据pc去查表来找到对应的源码行。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| loclist      | 描述对象在内存中的位置可以用位置表达式，也可以用位置列表。如果在对象生命周期中对象的位置可能发生变化，那么就需要一个位置列表来描述。再者，如果一个对象在内存中的存储不是一个连续的段，而是多个不相邻的段合并起来，那这种也需要用位置列表来描述。`<br>`在DWARF v2~v4中，位置列表信息存储在.[z]debug_loc中，在DWARF v5中，则存储在.[z]debug_loclist中。loclist包分别针对旧版本（DWARF v2~v4）、新版本（DWARF v5）中的位置列表予以了支持。`<br>`这个包中定义了Dwarf2Reader、Dwarf5Reader分别用来从旧版本、新版本的位置列表原始数据中读取位置列表。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| op           | 先看op.go，DWARF中前面讲述地址表达式的运算时，提到了地址运算是通过执行一个基于栈操作的程序指令列表来完成的。程序指令都是1字节码指令，这里的字节码在当前package中均有定义，其需要的操作数就在栈中，每个字节码指令都有一个对应的函数stackfn，该函数执行时会对栈中的数据进行操作，取操作数并将运算结果重新入栈。最终栈顶元素即结果。`<br>`opcodes.go中定义了一系列操作码、操作码到名字映射、操作码对应操作数数量。`<br>`registers.go定义了DWARF关心的寄存器列表的信息DwarfRegisters，还提供了一些遍历的方法，如返回指定编号对应的的寄存器信息DwarfRegister、返回当前PC/SP/BP寄存器的值。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| reader       | 该包定义了类型Reader，它内嵌了go标准库中的dwarf.Reader来从.[z]debug_info中读取DIE信息，每个DIE在DWARF中被组织成一棵树的形式，每个DIE对应一个dwarf.Entry，它包括了此前提及的Tag以及[]Field（Field中记录了Attr信息），此外还记录了DIE的Offset、是否包含孩子DIE。`<br>`这里的Reader，还定义了一些其他函数如Seek、SeekToEntry、AddrFor、SeekToType、NextType、SeekToTypeNamed、FindEntryNamed、InstructionsForEntryNamed、InstructionsForEntry、NextMemberVariable、NextPackageVariable、NextCompileUnit。`<br>`该包还定义了类型Variable，其中嵌入了描述一个变量的DIE构成的树godwarf.Tree。它还提供了函数Variables用来从指定DIE树中提取包含的变量列表。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| regnum       | 定义了寄存器编号与寄存器名称的映射关系，提供了函数快速双向查询。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| leb128       | 实现了几个工具函数：从一个sleb128编码的reader中读取一个int64；从一个uleb128编码的reader中读取一个uint64；对一个int64按sleb128编码后写入writer；对一个uint64按uleb128编码后写入writer。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| dwarf        | 实现了几个工具函数：从DWARF数据中读取基本信息（长度、dwarf64、dwarf版本、字节序），读取包含的编译单元列表及对应的版本信息，从buffer中读取DWARF string，从buffer中按指定字节序读取Uint16、Uint32、Uint64，按指定字节序编码一个Uint32、Uint64并写入buffer。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| dwarfbuilder | Implements a Builder, which can conveniently generate DWARF debugging information corresponding to different code structures. For example, New() returns a Builder and initially sets the header fields of the DWARF information, then you can use the returned builder to add compilation units, data types, variables, functions, etc. <br> This Builder greatly facilitates the rapid generation of corresponding debugging information for source code. However, this package is not very useful for implementing a debugger, but it is very helpful for verifying how the Go toolchain generates debugging information. Once you understand how the Go toolchain generates DWARF debugging information, you can further understand how to parse and apply the corresponding debugging information. <br> The purpose of this package is more for learning and verifying the generation and application of DWARF debugging information. |
+| frame        | The information in .[z]debug_frame can help build CFI (Canonical Frame Information). Given any instruction address, we can use CFI to calculate the current call stack. <br> Each compilation unit in DWARF information may compress multiple Go source files. Each compilation unit starts with a CIE (Common Information Entry), followed by a series of FDEs (Frame Description Entry). <br> Here, the types CommonInformationEntry and FrameDescriptionEntry are defined to represent CIE and FDE, respectively. FDE refers to CIE, CIE contains the initial instruction sequence, and FDE contains its own instruction sequence. Combining CIE and FDE can build a complete CFI table. <br> To facilitate determining whether a certain instruction address is within the range of a certain FDE, the type FrameDescriptionEntry defines the method Cover, and also provides Begin and End to give the range of the FDE. In addition, it defines the method EstablishFrame, which uses a state machine to execute the instruction sequences in CIE and FDE to build all or part of the CFI table as needed, making it easy to calculate the CFA (Canonical Frame Address). With it, you can further calculate the return address of the called function. <br> With this return address, which is actually an instruction address, you can calculate the corresponding source code location (such as file name, line number, function name). By continuing to use this return address as an instruction address for iterative processing, you can calculate the complete call stack. <br><br> **Note: The begin and end in FDE describe the address range of the instruction sequence for creating, destroying the stack frame, and its existence period. See the DWARF v4 standard for details.** <br> In addition, the type FrameDescriptionEntries is defined, which is actually a slice of FDEs, just with some helper functions added, such as FDEForPC for querying the FDE containing a given instruction address. <br> Each function has an FDE, and the instructions of each function are arranged in the order defined, and there is no case where the instruction range of one function's FDE includes that of another function's FDE. |
+| godwarf      | This package provides some basic functions. addr.go provides the parsing capability for .[z]debug_addr newly added in DWARF v5. <br> sections.go provides the ability to read debugging information from different file formats, such as GetDebugSectionElf, which can read the specified debugging section data from a given ELF file and automatically decompress the section data if it is compressed. <br> tree.go provides the ability to read the Tree composed of DIEs. If a compilation unit is not continuous, there will be multiple address ranges in Tree.Ranges. When determining whether the address range of a compilation unit contains a specified instruction address, you need to traverse Tree.Ranges for checking. The Tree.ContainsPC method simplifies this operation. The Tree.Type method also supports reading the type information corresponding to the current TreeNode. <br> type.go defines some types corresponding to Go data types, including basic data types BasicType and extended types such as CharType, UcharType, IntType, etc., as well as composite types such as StructType, SliceType, StringType, etc., and other types. These types are all stored in .[z]debug_info as DIEs. tree.go provides a very important function ReadType, which can read the type information defined at a specified offset from DWARF data, and establish the correspondence with Go data types through reflect.Kind in the corresponding type, so that variables can be easily created and assigned using Go's reflect package. |
+| line         | Symbolic debugging is important for converting between instruction addresses and source file:line numbers. For example, when adding breakpoints to statements, you need to convert them to instruction address patches, or when stopping at a breakpoint, you should display the current source code location. The line number table is used to achieve this conversion. The line number table is encoded as a bytecode instruction stream and stored in .[z]debug_line. <br> Each compilation unit has a line number table, and the line number table data of different compilation units will eventually be merged by the linker. Each line number table has a fixed structure for parsing, such as the header field, followed by specific data. <br> line_parser.go provides the method ParseAll to parse all line number tables of compilation units in .[z]debug_line. The type DebugLines represents all line number tables, and each compilation unit's line number table corresponds to the type DebugLineInfo. A very important field in DebugLineInfo is the instruction sequence, which is also executed by a line number table state machine. The state machine is implemented in state_machine.go, and after execution, a complete line number table can be built. <br> With a complete line number table, you can look up the corresponding source line by PC. |
+| loclist      | The location of an object in memory can be described by a location expression or a location list. If the location of an object may change during its lifetime, a location list is needed. Furthermore, if the storage of an object in memory is not a continuous segment but consists of multiple non-adjacent segments combined, a location list is also needed. <br> In DWARF v2~v4, location list information is stored in .[z]debug_loc, while in DWARF v5, it is stored in .[z]debug_loclist. The loclist package supports location lists in both the old (DWARF v2~v4) and new (DWARF v5) versions. <br> This package defines Dwarf2Reader and Dwarf5Reader for reading location lists from the raw data of the old and new versions, respectively. |
+| op           | Looking at op.go, when discussing address expressions in DWARF, it was mentioned that address calculation is done by executing a stack-based program instruction list. The program instructions are all 1-byte opcodes, which are defined in this package. The required operands are in the stack, and each opcode has a corresponding function stackfn, which operates on the data in the stack when executed, takes operands, and pushes the result back onto the stack. The top element of the stack is the result. <br> opcodes.go defines a series of opcodes, opcode-to-name mappings, and the number of operands for each opcode. <br> registers.go defines the information of the register list concerned by DWARF as DwarfRegisters, and also provides some traversal methods, such as returning the register information corresponding to a given number, and returning the values of the current PC/SP/BP registers. |
+| reader       | This package defines the type Reader, which embeds the dwarf.Reader from the Go standard library to read DIE information from .[z]debug_info. Each DIE is organized as a tree in DWARF, and each DIE corresponds to a dwarf.Entry, which includes the previously mentioned Tag and []Field (Field records Attr information), as well as the DIE's Offset and whether it contains child DIEs. <br> The Reader also defines some other functions such as Seek, SeekToEntry, AddrFor, SeekToType, NextType, SeekToTypeNamed, FindEntryNamed, InstructionsForEntryNamed, InstructionsForEntry, NextMemberVariable, NextPackageVariable, NextCompileUnit. <br> The package also defines the type Variable, which embeds the tree godwarf.Tree that describes a variable's DIE. It also provides the function Variables to extract the list of variables contained in a specified DIE tree. |
+| regnum       | Defines the mapping between register numbers and register names, and provides functions for fast bidirectional lookup. |
+| leb128       | Implements several utility functions: reading an int64 from a sleb128-encoded reader; reading a uint64 from a uleb128-encoded reader; writing an int64 to a writer with sleb128 encoding; writing a uint64 to a writer with uleb128 encoding. |
+| dwarf        | Implements several utility functions: reading basic information (length, dwarf64, dwarf version, endianness) from DWARF data, reading the list of compilation units and their version information, reading DWARF strings from a buffer, reading Uint16, Uint32, Uint64 from a buffer with specified endianness, encoding a Uint32, Uint64 with specified endianness and writing to a buffer. |
 
-`github.com/go-delve/delve/pkg/dwarf`，沉淀了delve对DWARF数据读写操作的支持。手写一个完备的DWARF解析库，要精通DWARF调试信息标准，还要了解go编译工具链在从DWARF v4演变到DWARF v5的过程中所做的各种调整，工作量还是很大的。为了避免大家学习过程过于枯燥，我们不会再手写一个新的DWARF支持库，而是复用go-delve/delve中的实现（可能会适当裁剪，并在必要时进行强调）。
+`github.com/go-delve/delve/pkg/dwarf` accumulates delve's support for reading and writing DWARF data. Writing a complete DWARF parsing library by hand requires proficiency in the DWARF debugging information standard, as well as understanding the various adjustments made by the Go toolchain in the evolution from DWARF v4 to DWARF v5, which is a lot of work. To avoid making the learning process too tedious, we will not write a new DWARF support library by hand, but will reuse the implementation in go-delve/delve (possibly with some trimming and emphasis when necessary).
 
-### DWARF应用
+### DWARF Application
 
-本小节相关代码您可以从这里获取：https://github.com/hitzhangjie/codemaster/tree/master/dwarf/test。
+The relevant code for this section can be found here: https://github.com/hitzhangjie/codemaster/tree/master/dwarf/test.
 
-#### ELF读取DWARF
+#### ELF Reading DWARF
 
-ELF文件中读取DWARF相关的调试section，并打印section名称及数据量大小：
+Read the DWARF-related debug sections from an ELF file and print the section names and data sizes:
 
 ```go
 func Test_ElfReadDWARF(t *testing.T) {
@@ -122,7 +122,7 @@ func Test_ElfReadDWARF(t *testing.T) {
 }
 ```
 
-fixtures/elf_read_dwarf由以下源程序编译而来：
+fixtures/elf_read_dwarf is compiled from the following source program:
 
 ```go
 package main
@@ -134,7 +134,7 @@ func main() {
 }
 ```
 
-`go test -v`运行结果如下：
+The result of running `go test -v` is as follows:
 
 ```bash
 $ go test -v
@@ -154,9 +154,9 @@ ok      github.com/hitzhangjie/codemaster/dwarf/test    0.015s
 
 ```
 
-#### 读取类型定义
+#### Reading Type Definitions
 
-仍以上面的elf_read_dwarf为例，读取其中定义的所有类型：
+Still using the above elf_read_dwarf as an example, read all the types defined in it:
 
 ```go
 func Test_DWARFReadTypes(t *testing.T) {
@@ -181,7 +181,7 @@ func Test_DWARFReadTypes(t *testing.T) {
 }
 ```
 
-`go test -run Test_DWARFReadTypes -v`运行结果如下：
+The result of running `go test -run Test_DWARFReadTypes -v` is as follows:
 
 ```
 $ go test -run Test_DWARFReadTypes -v
@@ -212,9 +212,9 @@ PASS
 ok      github.com/hitzhangjie/codemaster/dwarf/test    0.067s
 ```
 
-这里，我们没有显示类型具体定义在哪个源文件中，如果想获取所处源文件的话，需要结合编译单元对应的DIE来完成。
+Here, we did not display the type definition in which it was defined. If you want to get the source file, you need to combine the DIE of the compilation unit.
 
-我们在elf_read_dwarf.go中加一个自定义类型 `type Student struct{}`，然后编译。接着我们重新修改下测试代码：
+We added a custom type `type Student struct{}` in elf_read_dwarf.go and compiled it. Then we modified the test code:
 
 ```go
 func Test_DWARFReadTypes2(t *testing.T) {
@@ -258,7 +258,7 @@ func Test_DWARFReadTypes2(t *testing.T) {
 }
 ```
 
-`go test -run Test_DWARFReadTypes2`运行结果如下：
+The result of running `go test -run Test_DWARFReadTypes2` is as follows:
 
 ```bash
 $ go test -run Test_DWARFReadTypes2
@@ -274,9 +274,9 @@ $ go test -run Test_DWARFReadTypes2
     ...
 ```
 
-可以看到输出结果中显示编译单元runtime中定义了类型main.Student，奇怪了为什么是编译单元runtime中而非main，源码中命名是main.Student定义在package main中的。这里的编译单元可能会合并多个go源文件对应的目标文件，因此这个问题也就好理解了。
+We can see that the output result shows that the type main.Student is defined in the compilation unit runtime, which is strange because the source code in the package main is named main.Student. The compilation unit may merge multiple go source files corresponding to target files, so this problem is easy to understand.
 
-我们现在还可以按照类型名定位对应的类型DIE：
+We can also locate the type DIE corresponding to the type name:
 
 ```go
 func Test_DWARFReadTypes3(t *testing.T) {
@@ -294,7 +294,7 @@ func Test_DWARFReadTypes3(t *testing.T) {
 }
 ```
 
-`go test -v -run Test_DWARFReadTypes3`运行测试结果如下：
+The result of running the test command `go test -v -run Test_DWARFReadTypes3` is as follows:
 
 ```bash
 go test -run Test_DWARFReadTypes3 -v
@@ -306,11 +306,11 @@ PASS
 ok      github.com/hitzhangjie/codemaster/dwarf/test    0.020s
 ```
 
-这里的类型信息如何理解呢？这就需要结合前面讲过的DWARF如何描述数据类型相关的知识点慢慢进行理解了。不用担心，后面我们仍然会遇到这里的知识点，到时候会再次结合相关知识点来描述。
+The type information in the type information, we need to understand the DWARF how to describe data types related knowledge slowly. Don't worry, we will still encounter this knowledge later, when we will explain it again in conjunction with related knowledge.
 
-#### 读取变量
+#### Reading Variable Definitions
 
-现在读取变量定义对我们来说也不是什么难事了，我们来看个示例：
+Now reading variable definitions is not difficult for us, we can look at an example:
 
 ```go
 package main
@@ -325,7 +325,7 @@ func main() {
 }
 ```
 
-现在我们尝试获取上述main中的变量s的信息：
+Now we try to get the information about the variable s in the above main:
 
 ```go
 func Test_DWARFReadVariable(t *testing.T) {
@@ -380,7 +380,7 @@ func Test_DWARFReadVariable(t *testing.T) {
 }
 ```
 
-上面我们查看了变量的DIE、对应类型的DIE、该变量的内存地址，运行 `go test -run Test_DWARFReadVariable -v`查看运行结果：
+We looked at the DIE of the variable, the DIE of the corresponding type, and the memory address of the variable. Running `go test -run Test_DWARFReadVariable -v` to view the result:
 
 ```bash
 $ go test -run Test_DWARFReadVariable -v
@@ -396,11 +396,11 @@ ok      github.com/hitzhangjie/codemaster/dwarf/test    0.023s
 
 ```
 
-注意，在上述测试用例的尾部，我们还校验了变量 `s:=main.Student{}`的类型定义的位置偏移量与类型 `main.Student`的定义位置进行了校验。
+Note that at the end of the test case, we also verified the position offset of the type definition of the variable `s:=main.Student{}` with the position of the type `main.Student` defined.
 
-#### 读取函数定义
+#### Reading Function Definitions
 
-现在读取下程序中的函数、方法、匿名函数的定义：
+Now let's read the function, method, and anonymous function definitions in the program:
 
 ```go
 func Test_DWARFReadFunc(t *testing.T) {
@@ -426,7 +426,7 @@ func Test_DWARFReadFunc(t *testing.T) {
 }
 ```
 
-运行命令 `go test -v -run Test_DWARFReadFunc`进行测试，我们看到输出了程序中定义的一些函数，也包括我们main package中的函数main.main。
+Running the command `go test -v -run Test_DWARFReadFunc` to test, we see that some functions are defined in the program, including the function main.main in our main package.
 
 ```bash
 $ go test -v -run Test_DWARFReadFunc
@@ -445,11 +445,11 @@ PASS
 ok      github.com/hitzhangjie/codemaster/dwarf/test    41.679s
 ```
 
-go程序中除了上述tag为DW_TAG_subprogram的DIE与函数有关，DW_TAG_subroutine_type、DW_TAG_inlined_subroutine_type、DW_TAG_inlined_subroutine也与之有关，后面有机会再展开介绍。
+In addition to the tag DW_TAG_subprogram DIE in the go program, DW_TAG_subroutine_type, DW_TAG_inlined_subroutine_type, DW_TAG_inlined_subroutine are also related. We will expand on this later.
 
-#### 读取行号表信息
+#### Reading Line Number Table Information
 
-现在尝试读取程序中的行号表信息：
+Now let's try to read the line number table information in the program:
 
 ```go
 func Test_DWARFReadLineNoTable(t *testing.T) {
@@ -474,11 +474,11 @@ func Test_DWARFReadLineNoTable(t *testing.T) {
 }
 ```
 
-我们首先读取测试程序fixtures/elf_read_dwarf这个文件，然后从中提取.[z]debug_line section，然后调用 `line.ParseAll(...)`来解析.[z]debug_line中的数据，这个函数只是解析行号表序言然后将行号表字节码指令读取出来，并没有真正执行字节码指令来构建行号表。
+We first read the test program fixtures/elf_read_dwarf, then extract the .[z]debug_line section from it, and then call `line.ParseAll(...)` to parse the data in .[z]debug_line. This function only parses the line number table preface and reads out the line number table bytecode instruction, it does not actually execute the bytecode instruction to build the line number table.
 
-什么时候构建行号表呢？当我们按需进行查询时，line.DebugLines内部就会通过内部的状态机来执行字节码指令，完成这张虚拟的行号表的构建。
+When does the line number table build? When we query it as needed, line.DebugLines inside will execute the bytecode instruction through the internal state machine to complete the virtual line number table.
 
-在上述测试文件 `fixtures/elf_read_dwarf`对应的go源文件为：
+In the above test file fixtures/elf_read_dwarf, the corresponding go source file is:
 
 ```go
 1:package main
@@ -498,9 +498,9 @@ func Test_DWARFReadLineNoTable(t *testing.T) {
 15:}
 ```
 
-我们取上述源文件中的第10、12、13、14、15行还用来查询其对应的指令的PC值，`line.AllPCsForFileLines`将协助完成这项操作，并将结果存储到传入的map中。然后我们将这个map打印出来。
+We take the above source file's lines 10, 12, 13, 14, 15 to query their corresponding PC values. The `line.AllPCsForFileLines` will help complete this operation and store the result in the map passed in. Then we print out this map.
 
-运行测试命令 `go test -run Test_DWARFReadLineNoTable -v`，运行结果如下：
+Running the test command `go test -run Test_DWARFReadLineNoTable -v`, the result is as follows:
 
 ```bash
 $ go test -run Test_DWARFReadLineNoTable -v
@@ -518,11 +518,11 @@ PASS
 Process finished with the exit code 0
 ```
 
-我们可以看到源码中的lineno被映射到了对应的PC slice，因为有的源码语句可能对应着多条机器指令，指令地址当然也就有多个，这个很好理解，先不深究。可是按我们之前理解的行号表设计，每个行号处，只保留一个指令地址就可以了，为什么这里会有多个指令地址呢？
+We can see that the lineno in the source code is mapped to the corresponding PC slice, because a source code statement may correspond to multiple machine instructions, and the instruction address is naturally multiple, which is easy to understand, and we don't delve into it.
 
-我们先看下 `elf_read_dwarf.go:12`，这一行对应着3条指令的PC值，为什么呢？我们先反汇编看下这几条指令地址处是什么。
+However, according to our previous understanding of the line number table design, each lineno should only retain one instruction address, why are there multiple PC values here?
 
-运行 `objdump -dS fixtures/elf_read_dwarf`，并在里面检索上述几个地址，图中已用符号>标注）。
+We first disassemble to see what is at the above elf_read_dwarf.go:12, and search for the corresponding instruction position in the figure (marked with symbols >).
 
 ```bash
 func main() {
@@ -554,13 +554,13 @@ func main() {
   4b874d:       cc                      int3 
 ```
 
-这几条指令地址处确实比较特殊：
+These instruction addresses are indeed special:
 
-- 0x4b8640，该地址是函数的入口地址；
-- 0x4b8742，该地址对应的是runtime.morestack_noctxt的位置，对go协程栈有过了解的都清楚，该函数会检查是否需要将当前函数的栈帧扩容；
-- 0x4b8658，该地址则是在按需扩容栈帧后的分配栈帧动作；
+- 0x4b8640, this address is the entry address of the function;
+- 0x4b8742, this address corresponds to the position of runtime.morestack_noctxt, for those who are familiar with go goroutine stack, this function will check whether the stack frame needs to be expanded;
+- 0x4b8658, this address is the stack frame allocation action after the stack frame is expanded as needed;
 
-虽然这几个地址比较特殊，看上去也比较重要，但是为什么会关联3个PC值还是让人费解，我们继续看下elf_read_dwarf.go:14，并检索对应的指令位置（图中已用符号>标注）。
+Although these addresses are special and seem important, why are they related to 3 PC values? We continue to look at elf_read_dwarf.go:14 and search for the corresponding instruction position (marked with symbols > in the figure).
 
 ```bash
         fmt.Println(s)
@@ -583,21 +583,21 @@ func main() {
 
 ```
 
-一起来看下这两条指令地址有什么特殊的：
+Let's look at these two instruction addresses:
 
-- 0x4b8680，该地址处的指令很明显是准备调用函数fmt.Println(s)前的一些准备动作，具体做什么也不用关心无非是准备参数、返回值这些；
-- 0x4b86c0，该地址处的指令很明显是准备调用运行时函数runtime.convT2E，应该是将string变量s转换成eface，然后再交给后续的fmt.Println去打印；
+- 0x4b8680, this address is the instruction that prepares to call the function fmt.Println(s) before the call;
+- 0x4b86c0, this address is the instruction that prepares to call the runtime function runtime.convT2E, which should convert the string variable s to eface, and then pass it to fmt.Println to print;
 
-这么分析下来，一个lineno对应多个PC的情况下也没什么大问题，我们可以使用其中的任何一个作为断点来设置，这么想似乎也没什么不对，那为什么要有多个PC值呢？
+So, the analysis shows that a lineno may correspond to multiple PC values, which is not a big problem. We can use any one of them as a breakpoint to set, which seems reasonable, but why are there multiple PC values?
 
-- 这是bug吗？应该不是，我认为这是go编译器、链接器有意这样生成的。
-- 为什么这样生成呢？首先可以肯定的是，`line.AllPCsForFileLines`已经是根据行号表字节码指令运算出来的lineno到PC slice的映射关系了，算出来的结果也绝不是全量存储lineno对应的所有PC值。在此基础上考虑为什么会有多个PC。假设我们想对程序分析地更透彻一点，除了用户程序还可能包含go runtime等各种细节，如runtime.convT2E、runtime.morestack_noctxt，如果编译器、链接器指导生成的DWARF中包含了这样的字节码指令，有意让同一个lineno对应多个PC，我认为只可能是为了方便更精细化的调试，允许调试器不仅调试用户代码，也允许调试go runtime本身。
+- Is this a bug? I don't think so. I think this is intentional by the go compiler and linker.
+- Why is this generated? First, it can be confirmed that `line.AllPCsForFileLines` has already been the lineno to PC slice mapping calculated based on the line number table bytecode instruction. The result calculated is not necessarily all lineno to PC values. In this case, consider why there are multiple PC. Assuming we want to analyze the program more thoroughly, in addition to the user program, there may also be go runtime details, such as runtime.convT2E, runtime.morestack_noctxt, if the compiler and linker know that there are such bytecode instructions in the generated DWARF, and intentionally let the same lineno correspond to multiple PC, I think it is only possible to facilitate more fine-grained debugging, allowing the debugger not only to debug the user code but also to debug the go runtime itself.
 
-关于行号表的读取和说明就先到这，我们后续用到的时候会进一步展开。
+About line number table reading and explanation is first to this, we will further expand on it when we use it.
 
-#### 读取CFI表信息
+#### Reading CFI Table Information
 
-接下来读取CFI（Call Frame Information）信息表：
+Next, let's read the CFI (Call Frame Information) table:
 
 ```go
 func Test_DWARFReadCFITable(t *testing.T) {
@@ -630,27 +630,26 @@ func Test_DWARFReadCFITable(t *testing.T) {
 	}
 }
 ```
+First, we read the .[z]debug_frame section from the elf file, then use the `frame.Parse(...)` method to complete parsing of the CFI information table. The parsed data is stored in the variable fdes of type `FrameDescriptionEntries`, which is actually `type FrameDescriptionEntries []*FrameDescriptionEntry`, but with some convenient methods added to this type, such as the commonly used `FDEForPC(pc)` which returns the FDE whose instruction address range contains the given pc.
 
-我们首先读取elf文件中的.[z]debug_frame section，然后利用 `frame.Parse(...)`方法完成CFI信息表的解析，解析后的数据存储在类型为 `FrameDescriptionEntries`的变量fdes中，这个类型其实是 `type FrameDescriptionEntries []*FrameDescriptionEntry`，只不过在这个类型上增加了一些方便易用的方法，如比较常用的 `FDEForPC(pc)`用来返回FDE指令地址范围包含pc的那个FDE。
+We can iterate through fdes to print out the instruction address range of each fde.
 
-我们可以遍历fdes将每个fde的指令地址范围打印出来。
+When reading the line number table information, we learned that address 0x4b8640 is the entry address for main.main. Let's use this instruction for further testing. We iterate through all FDEs to check which FDE's instruction address range contains the main.main entry instruction 0x4b8640.
 
-在读取行号表信息时，我们了解到0x4b8640这个地址为main.main的入口地址，我们不妨拿这条指令来进一步做下测试。我们遍历所有的FDE来检查到底哪个FDE的指令地址范围包含main.main入口指令0x4b8640。
+> ps: Actually, this iteration + fde.Cover(pc) could be replaced by fdes.FDEForPC, but we're showing here that FrameDescriptionEntry provides the Cover method.
 
-> ps: 其实这里的遍历+fde.Cover(pc)可以通过通过fdes.FDEForPC代替，这里只是为了演示FrameDescriptionEntry提供了Cover方法。
-
-当找到的时候，我们就检查要计算当前pc 0x4b8640对应的CFA（Canonical Frame Address）。估计对CFA的概念又不太清晰了，再解释下CFA的概念：
+When found, we check to calculate the CFA (Canonical Frame Address) corresponding to the current pc 0x4b8640. In case the concept of CFA is unclear, let's explain it again:
 
 > **DWARFv5 Call Frame Information L8:L12**:
 >
-> An area of memory that is allocated on a stack called a “call frame.” The call frame is identiﬁed by an address on the stack. We refer to this address as the Canonical Frame Address or CFA. Typically, the CFA is deﬁned to be the value of the stack pointer at the call site in the previous frame (which may be different from its value on entry to the current frame).
+> An area of memory that is allocated on a stack called a "call frame." The call frame is identified by an address on the stack. We refer to this address as the Canonical Frame Address or CFA. Typically, the CFA is defined to be the value of the stack pointer at the call site in the previous frame (which may be different from its value on entry to the current frame).
 
-有了这个CFA我们就可以找到当前pc对应的栈帧以及caller的栈帧，以及caller的caller的栈帧……每个函数调用对应的栈帧中都有返回地址，返回地址实际为指令地址，借助行号表我们又可以将指令地址映射为源码中的文件名和行号，这样就可以很直观地显示当前pc的调用栈信息。
+With this CFA, we can find the stack frame corresponding to the current pc and the caller's stack frame, and the caller's caller's stack frame... Each function call's corresponding stack frame contains a return address, which is actually an instruction address. Using the line number table, we can map instruction addresses to file names and line numbers in the source code, allowing us to intuitively display the call stack information for the current pc.
 
-当然，CFI信息表提供的不光是CFA的计算，它还记录了指令执行过程中对其他寄存器的影响，因此还可以显示不同栈帧中时寄存器的值。通过在不同栈帧中游走，还可以看到栈帧中定义的局部变量的值。
+Of course, the CFI information table provides more than just CFA calculation. It also records the effects of instruction execution on other registers, so it can display register values in different stack frames. By walking through different stack frames, we can also see the values of local variables defined in the stack frames.
 
-关于CFI的使用我们就先简单介绍到这，后面实现符号级调试时再进一步解释。
+We'll keep the introduction to CFI usage brief for now, and explain further when implementing symbolic debugging later.
 
-### 本节小结
+### Section Summary
 
-本小节我们介绍了 `github.com/go-delve/delve/pkg/dwarf` 的一些DWARF支持，然后使用这些包编写了一些测试用例，分别测试了读取数据类型定义、读取变量、读取函数定义、读取行号表、读取调用栈信息表，通过编写这些测试用例，我们加深了对DWARF解析以及应用的理解。
+In this section, we introduced some DWARF support in `github.com/go-delve/delve/pkg/dwarf`, then wrote some test cases using these packages to test reading type definitions, variables, function definitions, line number tables, and call stack information tables. Through writing these test cases, we deepened our understanding of DWARF parsing and application.

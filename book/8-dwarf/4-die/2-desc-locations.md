@@ -1,158 +1,160 @@
-## 位置数据
+## Location Data
 
-调试信息必须为调试器提供一种方法，使其能够查找程序变量的位置、确定动态数组和字符串的范围，以及能找到函数栈帧的基地址或函数返回地址的方法。此外，为了满足最新的计算机体系结构和优化技术的需求，调试信息必须能够描述对象的位置，还需要注意的是，该对象的位置可能会在对象的生命周期内发生变化。
+Debugging information must provide a method for the debugger to find the location of program variables, determine the range of dynamic arrays and strings, and find the base address of the function stack frame or the return address of the function. Additionally, to meet the requirements of the latest computer architectures and optimization techniques, debugging information must be able to describe the location of objects, and it should be noted that the location of the object may change during its lifecycle.
 
-DWARF提供了一种非常通用的机制描述如何确定变量在内存中的实际位置，就是通过属性**DW_AT_location**，该属性允许指定一个操作序列，来告知调试器如何确定变量的地址。
+DWARF provides a very general mechanism to describe how to determine the actual location of a variable in memory, which is through the attribute **DW_AT_location**. This attribute allows specifying a sequence of operations to inform the debugger how to determine the address of the variable.
 
-### 多种寻址方式
+### Multiple Addressing Modes
 
-下面是DWARF v2官方示例中的demo，展示了如何使用属性 `DW_AT_location`来定位变量的地址。变量可以定义在寄存器中、内存中（堆、栈、全局存储区），对应的寻址规则也有差异（兼顾寻址的正确性、效率等）。
+Below is a demo from the DWARF v2 official example, showing how to use the attribute `DW_AT_location` to locate the address of a variable. Variables can be defined in registers, memory (heap, stack, global storage area), and the corresponding addressing rules also differ (considering the correctness and efficiency of addressing).
 
 <img alt="location" src="assets/clip_image006.png" width="480px"/>
 
-Figure 7这个示例中：
+In Figure 7, this example:
 
-- 变量b定义在寄存器中， `DW_AT_location = (DW_OP_reg0)`，直接存储在reg0对应的寄存器中；
-- 变量c存储在栈上，`DW_AT_location = (DW_OP_fbreg: -12)`，EA=fbreg-12,fbreg (framebase register)，表示该变量位置在当前 `栈基址-12` 这个位置；
-- 变量a存储在固定地址（.data section中），`DW_AT_location = (DW_OP_addr: 0)`，存储在.data开头；
+- Variable `b` is defined in a register, `DW_AT_location = (DW_OP_reg0)`, directly stored in the register corresponding to `reg0`;
+- Variable `c` is stored on the stack, `DW_AT_location = (DW_OP_fbreg: -12)`, EA=fbreg-12, fbreg (framebase register), indicating that the variable is located at the current `stack base - 12` position;
+- Variable `a` is stored at a fixed address (in the `.data` section), `DW_AT_location = (DW_OP_addr: 0)`, stored at the beginning of `.data`;
 
-描述位置信息的方法，主要可以分为两类：
+The methods for describing location information can be mainly divided into two categories:
 
-- **位置表达式（Location Expressions）**，是与语言无关的寻址规则表示形式，它是由一些基本构建块、操作序列组合而成的任意复杂度的寻址规则。 只要对象的生命周期是静态的（static）或与拥有它的词法块相同，并且在整个生命周期内都不会移动，它们就足以描述任何对象的位置。
-- **位置列表（Location Lists）**，用于描述生命周期有限的对象或在整个生命周期内对象的地址可能会发生变动的对象。
+- **Location Expressions**, which are language-independent representations of addressing rules, composed of some basic building blocks and operation sequences of arbitrary complexity. They are sufficient to describe the location of any object as long as the object's lifecycle is static or the same as the lexical block that owns it, and it does not move throughout its lifecycle.
+- **Location Lists**, used to describe objects with a limited lifecycle or objects whose address may change throughout their lifecycle.
 
-### “位置表达式”描述单一位置
+### "Location Expressions" Describe a Single Location
 
-变量在整个生命周期内，其位置都不会发生变化，此时只需要一个单一的位置表达式即可，用DWARF表达式直接描述变量的存储位置，比如“在寄存器X”或“在栈偏移量Y处”。位置表达式由0个或者多个位置操作组成，可以划分为“寄存器名” 和 “地址操作”两种寻址方式。
+If a variable's location does not change throughout its lifecycle, only a single location expression is needed. The DWARF expression directly describes the storage location of the variable, such as "in register X" or "at stack offset Y". Location expressions consist of zero or more location operations and can be divided into "register names" and "address operations" for addressing.
 
-> ps: 如果没有位置运算表达式，则表示该对象在源代码中存在、在目标文件中不存在，被编译器给优化掉了。
+> Note: If there is no location operation expression, it means that the object exists in the source code but not in the target file, as it has been optimized away by the compiler.
 
-#### 寄存器名
+#### Register Names
 
-寄存器名（寄存器号），始终是单独出现的，并指示所引用的对象包含在特定寄存器中。请注意，寄存器号是DWARF中特定的数字到给定体系结构的实际寄存器的映射。`DW_OP_reg${n} (0<=n<=31)` 操作编码了32个寄存器, 该对象地址在寄存器n中. `DW_OP_regx` 操作有一个无符号LEB128编码的操作数，该操作数代表寄存器号。
+Register names (register numbers) always appear alone and indicate that the referenced object is contained in a specific register. Note that register numbers are specific mappings in DWARF from numbers to actual registers of a given architecture. The `DW_OP_reg${n} (0<=n<=31)` operation encodes 32 registers, indicating that the object's address is in register `n`. The `DW_OP_regx` operation has an unsigned LEB128 encoded operand, which represents the register number.
 
-#### 地址操作
+#### Address Operations
 
-地址操作是针对内存地址的计算规则，所有位置操作的操作码（opcode）和操作数（operand），被编码在同一个操作流里，每个操作码后跟0个或多个操作数，操作数的数量由操作码决定。类似这样 `[opcode1][operand1][operand2][opcode2][opcode3][operand3]...`。
+Address operations are calculation rules for memory addresses. All operation codes (opcodes) and operands of location operations are encoded in the same operation stream. Each opcode is followed by zero or more operands, and the number of operands is determined by the opcode. It looks like this: `[opcode1][operand1][operand2][opcode2][opcode3][operand3]...`.
 
-ps：前面查看变量地址时，我们介绍过DW_AT_location是一个byte数组，解码时是从这个byte数组中一起解码的。
+Note: When we previously checked the variable address, we introduced that `DW_AT_location` is a byte array, and decoding is done from this byte array.
 
-每个寻址操作都表示 "**基于栈架构机器上的后缀操作**"，这里的栈，通常称为 “位置栈（Location Stack）” 或 “寻址栈（Addressing Stack）”：
+Each addressing operation represents a "**postfix operation on a stack-based machine**", where the stack is often called the "Location Stack" or "Addressing Stack":
 
-- 栈上每个元素，是一个目标机器上的地址的值（或表达式计算过程中的中间结果）；
-- 执行位置表达式之后，栈顶元素的值就是计算结果（对象的地址，或者数组长度，或者字符串长度）。
+- Each element on the stack is a value of an address on the target machine (or an intermediate result during expression calculation);
+- After executing the location expression, the value of the top element of the stack is the calculation result (the address of the object, or the length of the array, or the length of the string).
 
-**位置表达式中的地址计算方式，主要包括如下几种：**
+**The address calculation methods in location expressions mainly include the following:**
 
-1. **寄存器寻址**
+1. **Register Addressing**
 
-   寄存器寻址方式， 计算目标寄存器中的值与指定偏移量的和，结果push到栈上：
+   Register addressing calculates the sum of the value in the target register and the specified offset, and pushes the result onto the stack:
 
-   - DW_OP_fbreg \$offset, 计算栈基址寄存器 (rbp)中的值 与 偏移量 $offset的和；
-   - DW_OP_breg\${n} \${offset}, 计算编号n的寄存器中的值 与 偏移量$offset（LEB128编码）的和；
-   - DW_OP_bregx \${n} \${offset}, 计算编号n（LEB128编码）的寄存器中的值 与 偏移量 $offset（LEB128编码）的和；
-2. **栈操作**
+   - `DW_OP_fbreg \$offset`, calculates the sum of the value in the stack base register (rbp) and the offset `$offset`;
+   - `DW_OP_breg\${n} \${offset}`, calculates the sum of the value in register `n` and the offset `$offset` (LEB128 encoded);
+   - `DW_OP_bregx \${n} \${offset}`, calculates the sum of the value in register `n` (LEB128 encoded) and the offset `$offset` (LEB128 encoded).
 
-   以下操作执行后都会push一个值到Location Stack上：
+2. **Stack Operations**
 
-   - DW_OP_lit\${n} (0<=n<=31), 编码一个无符号字面量值\${n}；
-   - DW_OP_addr, 编码一个与目标机器匹配的机器地址；
-   - DW_OP_const1u/1s/2u/2s/4u/4s/8u/8s, 编码一个1/2/4/8 字节 无符号 or 有符号整数；
-   - DW_OP_constu/s, 编码一个 LEB128 无符号数 or 有符号整数.
+   The following operations will push a value onto the Location Stack after execution:
 
-   以下操作会操作Location Stack，栈顶索引值为0：
+   - `DW_OP_lit\${n} (0<=n<=31)`, encodes an unsigned literal value `\${n}`;
+   - `DW_OP_addr`, encodes a machine address matching the target machine;
+   - `DW_OP_const1u/1s/2u/2s/4u/4s/8u/8s`, encodes a 1/2/4/8-byte unsigned or signed integer;
+   - `DW_OP_constu/s`, encodes an LEB128 unsigned or signed integer.
 
-   - DW_OP_dup, 复制栈顶entry并重新入栈;
-   - DW_OP_drop, 弹出栈顶entry；
-   - DW_OP_pick, 使用1字节索引值\${index}，从栈中根据\${index}找到对应entry并重新入栈；
-   - DW_OP_over, 复制index==2的entry并重新入栈；
-   - DW_OP_swap, 指定两个索引值index1\index2，交换这两个索引值对应的entries；
-   - DW_OP_rot, 旋转滚动栈顶的的3个entries；
-   - DW_OP_deref, 弹栈获取到的值作为有效地址，从这个地址处读取sizeof(ptrOfTargetMachine)大小的数据，并将数据入栈；
-   - DW_OP_deref_size, 类似于DW_OP_deref，不同之处在于，要读取的数据量由1-byte操作数来指定, 然后读取到的数据入栈前将被0填充到sizeof(ptrOfTargetMachine)大小；
-   - DW_OP_xderef & DW_OP_xderef_size, 类似于DW_OP_ref，不同之处在于，扩展了解引用的机制。解引用时, 弹出的栈顶entry数据作为地址；继续弹栈得到次栈顶数据作为地址空间标志符。执行一点计算得到有效地址，并从中读取数据，并入栈；
-3. **算术和逻辑运算**
+   The following operations manipulate the Location Stack, with the top index value being 0:
 
-   DW_OP_abs, DW_OP_and, DW_OP_div, DW_OP_minus, DW_OP_mod, DW_OP_mul, DW_OP_neg, DW_OP_not, DW_OP_or, DW_OP_plus, DW_OP_plus_uconst, DW_OP_shl, DW_OP_shr, DW_OP_shra, DW_OP_xor, 这些操作工作方式类似，都是从栈里面pop操作数然后计算，并将结果push到栈上。
-4. **控制流操作**
+   - `DW_OP_dup`, duplicates the top entry and pushes it back onto the stack;
+   - `DW_OP_drop`, pops the top entry;
+   - `DW_OP_pick`, uses a 1-byte index value `\${index}` to find the corresponding entry from the stack and pushes it back onto the stack;
+   - `DW_OP_over`, duplicates the entry at index 2 and pushes it back onto the stack;
+   - `DW_OP_swap`, specifies two index values `index1\index2` and swaps the entries corresponding to these two index values;
+   - `DW_OP_rot`, rotates the top three entries of the stack;
+   - `DW_OP_deref`, pops the value obtained from the stack as a valid address, reads data of size `sizeof(ptrOfTargetMachine)` from this address, and pushes the data onto the stack;
+   - `DW_OP_deref_size`, similar to `DW_OP_deref`, but the amount of data to read is specified by a 1-byte operand, and the read data will be zero-padded to `sizeof(ptrOfTargetMachine)` before being pushed onto the stack;
+   - `DW_OP_xderef & DW_OP_xderef_size`, similar to `DW_OP_ref`, but extends the dereferencing mechanism. When dereferencing, the popped top entry data is used as the address; continue to pop the stack to get the second top data as the address space identifier. Perform some calculations to get the valid address, read data from it, and push it onto the stack.
 
-   以下操作提供对位置表达式流程的简单控制：
+3. **Arithmetic and Logical Operations**
 
-   - 关系运算符，这六个运算符分别弹出顶部的两个堆栈元素，并将顶部的第一个与第二个条目进行比较，如果结果为true，则push值1；如果结果为false，则push值0；
-   - DW_OP_skip，无条件分支，其操作数是一个2字节常量，表示要从当前位置表达式跳过的位置表达式的字节数，从2字节常量之后开始；
-   - DW_OP_bra，条件分支，此操作从栈上pop一个元素，如果弹出的值不为零，则跳过一些字节以跳转到位置表达式。
-     要跳过的字节数由其操作数指定，该操作数是一个2字节的常量，表示从当前定位表达式开始要跳过的位置表达式的字节数（从2字节常量开始）；
-5. **特殊操作**
+   `DW_OP_abs`, `DW_OP_and`, `DW_OP_div`, `DW_OP_minus`, `DW_OP_mod`, `DW_OP_mul`, `DW_OP_neg`, `DW_OP_not`, `DW_OP_or`, `DW_OP_plus`, `DW_OP_plus_uconst`, `DW_OP_shl`, `DW_OP_shr`, `DW_OP_shra`, `DW_OP_xor`, these operations work similarly, popping operands from the stack, calculating, and pushing the result onto the stack.
 
-   DWARF v2中有两种特殊的操作（DWARF v4中是否有新增，暂时先不关注）：
+4. **Control Flow Operations**
 
-   - DW_OP_piece, 许多编译器将单个变量存储在一组寄存器中，或者部分存储在寄存器中，部分存储在内存中。 DW_OP_piece提供了一种描述特定地址位置所指向变量的哪一部分、该部分有多大的方式；
-   - DW_OP_nop, 它是一个占位符，它对位置堆栈或其任何值都没有影响；
+   The following operations provide simple control over the flow of location expressions:
 
-> ps: 对于结构体成员地址的计算，在执行位置表达式之前，需要先将包含该成员的结构体的起始地址push到栈上。
+   - Relational operators, these six operators pop the top two stack elements and compare the first with the second entry, pushing 1 if the result is true, and 0 if false;
+   - `DW_OP_skip`, unconditional branch, its operand is a 2-byte constant, indicating the number of bytes to skip from the current location expression, starting after the 2-byte constant;
+   - `DW_OP_bra`, conditional branch, this operation pops an element from the stack, and if the popped value is not zero, it skips some bytes to jump to the location expression. The number of bytes to skip is specified by its operand, which is a 2-byte constant, indicating the number of bytes to skip from the current location expression (starting from the 2-byte constant).
 
-#### 操作示例
+5. **Special Operations**
 
-上面提到的寻址操作都是些常规描述，下面是一些示例。
+   There are two special operations in DWARF v2 (whether there are new ones in DWARF v4, we will not focus on for now):
 
-- 栈操作示例
+   - `DW_OP_piece`, many compilers store a single variable in a set of registers, or partially in registers and partially in memory. `DW_OP_piece` provides a way to describe which part of the variable pointed to by a specific address location and how large that part is;
+   - `DW_OP_nop`, it is a placeholder and has no effect on the location stack or any of its values;
 
-`<img alt="location rules" src="assets/clip_image007.png" width="480px"/>`
+> Note: For calculating the address of a struct member, before executing the location expression, the starting address of the struct containing the member needs to be pushed onto the stack.
 
-- 位置表达式示例
+#### Operation Examples
 
-  以下是一些有关如何使用位置运算来形成位置表达式的示例。
+The addressing operations mentioned above are conventional descriptions. Below are some examples.
+
+- Stack Operation Example
+
+<img alt="location rules" src="assets/clip_image007.png" width="480px"/>
+
+- Location Expression Example
+
+  Below are some examples of how to use location operations to form location expressions.
 
   ![img](assets/clip_image008.png)
 
-### “位置列表”可描述多个位置
+### "Location Lists" Can Describe Multiple Locations
 
-如果一个对象的位置在其生命周期内可能会发生改变，或者生命周期有限，就可以使用位置列表代替位置表达式来描述其位置。实际上，就是用一组区间（PC范围）和对应的DWARF表达式，描述变量在不同代码区间时的存储位置。什么情况下会发生“变量的存储位置在不同的代码区间时会发生变化”呢？比如由于优化、寄存器分配、变量溢出到栈等。
+If an object's location may change during its lifecycle or has a limited lifecycle, a location list can be used instead of a location expression to describe its location. In practice, it uses a set of intervals (PC ranges) and corresponding DWARF expressions to describe the storage location of the variable in different code intervals. Under what circumstances will the "storage location of the variable change in different code intervals"? For example, due to optimization, register allocation, variable spilling to the stack, etc.
 
-举个例子，比如变量b在函数的前半段保存在寄存器rbx，后半段被溢出到栈上（比如rbp-8），此时就应该用位置列表来跟踪对象地址的变化。
+For example, if variable `b` is saved in register `rbx` in the first half of the function and spilled to the stack (e.g., `rbp-8`) in the second half, a location list should be used to track the changes in the object's address.
 
 ```
-[0x100, 0x120): DW_OP_reg3         // 在0x100到0x120之间，b在rbx
-[0x120, 0x140): DW_OP_fbreg -8     // 在0x120到0x140之间，b在rbp-8
+[0x100, 0x120): DW_OP_reg3         // Between 0x100 and 0x120, b is in rbx
+[0x120, 0x140): DW_OP_fbreg -8     // Between 0x120 and 0x140, b is at rbp-8
 ```
 
-> ps: 有读者会想到有些编程语言里面的移动式GC，那个跟这个完全是两码事，也不能用这种方式来解决。
+> Note: Some readers might think of moving garbage collection in some programming languages, but that is completely different and cannot be solved this way.
 
-位置列表 (.debug_loc section) 中的每一项包括:
+Each entry in the location list (`.debug_loc` section) includes:
 
-- 起始地址，相对于引用此位置列表的编译单元的基址，它标记该位置有效的地址范围的起始位置；
-- 结束地址，它还是相对于引用此位置列表的编译单元的基址而言的，它标记了该位置有效的地址范围的结尾；
-- 一个位置表达式，它描述PC在起始地址和结束地址指定的范围内时，对象在内存中的位置表达式；
+- Starting address, relative to the base address of the compilation unit referencing this location list, marking the start of the address range where this location is valid;
+- Ending address, also relative to the base address of the compilation unit referencing this location list, marking the end of the address range where this location is valid;
+- A location expression, describing the location expression of the object in memory when the PC is within the range specified by the starting and ending addresses;
 
-位置列表以一个特殊的list entry标识列表的结束，该list entry中的起始地址、结束地址都是0，并且没有位置描述。
-DWARF v5会将.debug_loc和.debug_ranges替换为.debug_loclists和.debug_rnglists，从而实现更紧凑的数据表示，并消除重定位。
+The location list ends with a special list entry, where both the starting and ending addresses are 0, and there is no location description.
+DWARF v5 will replace `.debug_loc` and `.debug_ranges` with `.debug_loclists` and `.debug_rnglists`, achieving more compact data representation and eliminating relocations.
 
-### 位置信息的生成
+### Generation of Location Information
 
-DWARF 位置表达式的设计确实相对直观，编译器在生成调试信息时，能够根据变量的存储安排（如寄存器、栈、全局存储区等）直接生成对应的位置表达式。具体来说：
+The design of DWARF location expressions is indeed relatively intuitive. When generating debugging information, the compiler can directly generate corresponding location expressions based on the storage arrangement of variables (such as registers, stack, global storage area, etc.). Specifically:
 
-1. 编译器已知变量位置：编译器在编译过程中会进行语法分析、符号表管理、存储分配等工作，因此它能够确定每个变量的存储位置（例如，局部变量在栈上的偏移量、全局变量在 .data 段的地址、寄存器分配等）。
-2. 位置表达式的生成：编译器可以根据这些已知信息，直接生成 DWARF 位置表达式。例如：
+1. **Compiler Knows Variable Location**: During compilation, the compiler performs syntax analysis, symbol table management, storage allocation, etc., so it can determine the storage location of each variable (e.g., local variables on the stack, global variables in the `.data` segment, register allocation, etc.).
+2. **Generation of Location Expressions**: The compiler can directly generate DWARF location expressions based on these known information. For example:
 
-   * 如果变量 a 存储在全局数据段，编译器会生成 DW_OP_addr: 0 这样的位置表达式。
-   * 如果变量 b 存储在寄存器 reg0 中，编译器会生成 DW_OP_reg0。
-   * 如果变量 c 存储在栈上，编译器会生成 DW_OP_fbreg: -12，表示栈基址寄存器（如 rbp）减去偏移量 12。
-3. 位置表达式的简单性：DWARF 位置表达式的设计是基于栈的后缀操作，这种设计使得表达式能够灵活地描述复杂的地址计算，同时保持简洁。编译器只需要根据变量的存储安排，生成对应的操作码和操作数即可。
-4. 当然了，编译器也知道做了哪些优化、寄存器分配、什么情况下会发生变量溢出到栈的情况，自然也可以知道PC处于不同范围时应该生成不同的位置信息（位置列表）；
+   * If variable `a` is stored in the global data segment, the compiler will generate a location expression like `DW_OP_addr: 0`.
+   * If variable `b` is stored in register `reg0`, the compiler will generate `DW_OP_reg0`.
+   * If variable `c` is stored on the stack, the compiler will generate `DW_OP_fbreg: -12`, indicating the stack base register (e.g., `rbp`) minus the offset 12.
+3. **Simplicity of Location Expressions**: The design of DWARF location expressions is based on postfix operations on a stack, allowing flexible description of complex address calculations while maintaining simplicity. The compiler only needs to generate corresponding opcodes and operands based on the storage arrangement of variables.
+4. Of course, the compiler also knows what optimizations and register allocations it has made, and under what circumstances variables will spill to the stack, so it can naturally know what location information (location list) should be generated when the PC is in different ranges.
 
-这个过程属于编译器的工作范畴，并没有那么复杂，这部分了解到这里就可以了。
+This process belongs to the compiler's work scope and is not that complex. Understanding this part is sufficient.
 
-### 本文总结
+### Summary of This Article
 
-本文介绍了DWARF中的位置描述机制。我们了解到DWARF使用位置表达式和位置列表两种方式来描述变量的位置信息:
+This article introduces the location description mechanism in DWARF. We learned that DWARF uses location expressions and location lists to describe the location information of variables:
 
-- 位置表达式是一种基于栈的后缀表达式,通过一系列操作来计算出变量的实际地址
-- 位置列表则用于描述变量在其生命周期内可能发生变化的位置信息,通过PC范围和对应的位置表达式来表示
+- Location expressions are stack-based postfix expressions, calculating the actual address of the variable through a series of operations.
+- Location lists are used to describe the location information of variables that may change during their lifecycle, represented by PC ranges and corresponding location expressions.
 
-这种灵活的位置描述机制使得调试器能够准确地定位和访问程序中的变量,即使在编译优化、寄存器分配等情况下也能正确工作。编译器在生成调试信息时,能够根据变量的存储安排直接生成对应的位置表达式或位置列表。
+This flexible location description mechanism allows the debugger to accurately locate and access variables in the program, even under compilation optimization, register allocation, etc. When generating debugging information, the compiler can directly generate corresponding location expressions or location lists based on the storage arrangement of variables.
 
-
-### 参考文献
+### References
 
 1. DWARF, https://en.wikipedia.org/wiki/DWARF
 2. DWARFv1, https://dwarfstd.org/doc/dwarf_1_1_0.pdf

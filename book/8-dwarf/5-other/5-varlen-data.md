@@ -1,15 +1,15 @@
-## 可变长数据
+## Variable-Length Data
 
-在整个DWARF中有大量信息使用整数值来表示，从数据段偏移量，到数组或结构体的大小，等等。由于大多数整数值是小整数，用几位就可以表示，因此这意味着数据主要由零组成，对应的bits相当于被浪费了。
+Throughout DWARF, there is a large amount of information represented using integer values, from data segment offsets to array or structure sizes, and so on. Since most integer values are small numbers that can be represented with just a few bits, this means the data consists mainly of zeros, and the corresponding bits are effectively wasted.
 
-DWARF定义了一个可变长度的整数编码方案，称为Little Endian Base 128（LEB128），它能够压缩实际占用的字节数，减小编码后的数据量。LEB128有两种变体:
+DWARF defines a variable-length integer encoding scheme called Little Endian Base 128 (LEB128), which can compress the actual number of bytes used and reduce the size of the encoded data. LEB128 has two variants:
 
-- ULEB128: 用于编码无符号整数
-- SLEB128: 用于编码有符号整数
+- ULEB128: Used for encoding unsigned integers
+- SLEB128: Used for encoding signed integers
 
-### ULEB128编码方案
+### ULEB128 Encoding Scheme
 
-UELB128编码算法：
+UELB128 encoding algorithm:
 
 ```
 MSB ------------------ LSB
@@ -22,46 +22,45 @@ MSB ------------------ LSB
 → 0xE5 0x8E 0x26            Output stream (LSB to MSB)
 ```
 
-用咱家乡话总结下就是：
+To summarize in plain language:
 
-1. 将数字转换为二进制数表示，这些字节按小端序排列(即最低有效字节在前)
-2. 将整数按7位一组进行分割
-3. 每组7位存储在一个字节中,该字节的最高位(第8位)用作标志位:
-   - 如果后面还有更多组,则该位设为1 
-   - 如果是最后一组,则该位设为0
+1. Convert the number to binary representation, with these bytes arranged in little-endian order (i.e., least significant byte first)
+2. Split the integer into groups of 7 bits
+3. Store each 7-bit group in a byte, using the highest bit (8th bit) as a flag:
+   - If there are more groups to follow, set this bit to 1
+   - If this is the last group, set this bit to 0
 
-例如,数字Uint64 624485的ULEB128编码为:
+For example, the ULEB128 encoding of the number Uint64 624485 is:
 
 624485 = 0x98765
 
-十六进制数，一个数位由4位二进制表示，转换为二进制表示为: 
+Hexadecimal number, where each digit is represented by 4 binary bits, converted to binary representation:
 ```
 1001 1000 0111 0110 0101
 ```
 
-考虑到7位一组进行分割，先填充为7bits的整数倍：
+Considering splitting into groups of 7 bits, first pad to a multiple of 7 bits:
 ```
 0 1001 1000 0111 0110 0101
 ```
 
-然后7位一组进行分割，注意是小端字节序，所以从右边开始分割：
+Then split into groups of 7 bits, note that it's little-endian byte order, so split from the right:
 
 ```
 0 1001 10 / 00 0111 0 / 110 0101
 ```
 
-- 第1组: 110 0101，因为后续还有，所以第8位标记为1，最终为 1110 0101 = 0xe5
-- 第2组: 00 0111 0, 000 1110，第8位标记为1，最终为 1000 1110 = 0x8e
-- 第3组: 0 1001 10, 010 0110，第8位标记wi0，最终为 0010 0110 = 0x26
+- Group 1: 110 0101, because there are more to follow, set the 8th bit to 1, final result is 1110 0101 = 0xe5
+- Group 2: 00 0111 0, 000 1110, set the 8th bit to 1, final result is 1000 1110 = 0x8e
+- Group 3: 0 1001 10, 010 0110, set the 8th bit to 0, final result is 0010 0110 = 0x26
 
+The encoded byte sequence is: []byte{0xe5 0x8e 0x26}, using only 3 bytes in total, while using the original data type uint64 would require 8 bytes.
 
-编码后的字节序列为: []byte{0xe5 0x8e 0x26}，最终只占用了3个字节，而如果用原始数据类型uint64则要用8个字节。
+### SLEB128 Encoding Scheme
 
-### SLEB128编码方案
+The SLEB128 encoding rules are similar, but when handling negative numbers, sign bit extension needs to be considered. There is no difference when handling positive numbers.
 
-SLEB128的编码规则类似，只是在处理负数时需要考虑符号位扩展，处理正数时没有区别。
-
-SLEB128负数编码算法：
+SLEB128 negative number encoding algorithm:
 
 ```
 MSB ------------------ LSB
@@ -74,13 +73,13 @@ MSB ------------------ LSB
     0x78     0xBB     0xC0  In hexadecimal
 ```
 
-用咱家乡话说就是：
+In plain language:
 
-1. 如果是负数，先转换为二进制补码表示
-2. 然后7bits一组进行分组，依然按照小端来
-3. 除了最后一组，每个分组的第8位都标记为1
-4. 得到最终结果
+1. If it's a negative number, first convert to two's complement representation
+2. Then split into groups of 7 bits, still following little-endian order
+3. Set the 8th bit to 1 for all groups except the last one
+4. Get the final result
 
-### 本文总结
+### Summary
 
-本文介绍了ULEB128、SLEB128这种对小整数编码存储友好的编码方案，可以节省存储空间占用。对于正数，ULEB128、SLEB128编码结果是相同的，只是对于负数时，SLEB128要先转换为其补码再进行编码。通过这种编码方式，DWARF能够有效压缩整数数据，减小调试信息的体积。在实际应用中，大多数整数值都可以用1-2个字节表示，相比固定4字节或8字节的存储方式节省了大量空间。
+This article introduced the ULEB128 and SLEB128 encoding schemes that are storage-friendly for small integers, which can save storage space. For positive numbers, ULEB128 and SLEB128 encoding results are the same, but for negative numbers, SLEB128 needs to convert to its two's complement before encoding. Through this encoding method, DWARF can effectively compress integer data and reduce the size of debugging information. In practical applications, most integer values can be represented using 1-2 bytes, saving significant space compared to fixed 4-byte or 8-byte storage methods.

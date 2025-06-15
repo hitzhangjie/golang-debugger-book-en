@@ -1,160 +1,156 @@
-## 行号表（Line Number Table）
+## Line Number Table
 
-### 功能介绍
+### Function Introduction
 
-符号级调试器需要建立源代码位置与机器指令地址之间的映射关系，有了这种映射关系，调试器就可以实现如下操作:
+Symbolic debuggers need to establish a mapping relationship between source code locations and machine instruction addresses. With this mapping relationship, debuggers can implement the following operations:
 
-- 将源代码位置(文件名:行号)转换为对应的机器指令地址，从而在该地址处精确地设置断点，或者从该地址处开始反汇编等等；
-- 将当前执行的机器指令地址（PC）反向转换为源代码位置，这样调试时不管是逐指令还是逐语句执行都可以显示出当前源码位置；
-- 不仅可以实现机器指令级别的逐指令执行，还可以支持源代码级别的逐语句执行，因为很容易就可以确定下一行语句的指令地址；
+- Convert source code locations (filename:line number) to corresponding machine instruction addresses, allowing precise breakpoint setting at that address or disassembly starting from that address;
+- Convert the currently executing machine instruction address (PC) back to source code location, so that during debugging, whether executing instruction by instruction or statement by statement, the current source location can be displayed;
+- Not only can implement instruction-by-instruction execution at the machine instruction level, but also support statement-by-statement execution at the source code level, because it's easy to determine the instruction address of the next statement;
 
-**行号表，记录了可执行程序机器指令地址和源文件中位置之间的映射关系**，为源码级调试提供了大的便利。每个编译单元都有对应的行号表，存储在目标文件的 **.[z]debug_line** section中。.debug_info section中编译单元对应的DIE会引用这里的.debug_line数据(参见DWARF v4规范3.1.1节)。
+**The line number table records the mapping relationship between machine instruction addresses in the executable program and locations in source files**, providing great convenience for source-level debugging. Each compilation unit has its corresponding line number table, stored in the **.[z]debug_line** section of the target file. The DIE corresponding to the compilation unit in the .debug_info section references the .debug_line data here (see section 3.1.1 of the DWARF v4 specification).
 
-### 存储结构
+### Storage Structure
 
-**行号表的结构可以形象地理解为一个矩阵**，其中每一行包含了以下关键信息：
+**The structure of the line number table can be visualized as a matrix**, where each row contains the following key information:
 
 <img alt="line_num_table" src="assets/line_num_table.png" width="480px"/>
 
-- 指令地址，对应机器指令在内存中的位置
-- 源文件名，指令对应的源代码文件
-- 源文件行号，指令对应的源文件中的行号
-- 源文件列号，指令对应的源文件中的列号
-- 语句标识，标记当前指令是否为源码语句的起始指令
-- 词法块标识，标记当前指令是否为词法块的起始指令
-- 其他辅助信息
+- Instruction address, corresponding to the location of the machine instruction in memory
+- Source filename, the source code file corresponding to the instruction
+- Source file line number, the line number in the source file corresponding to the instruction
+- Source file column number, the column number in the source file corresponding to the instruction
+- Statement flag, marking whether the current instruction is the starting instruction of a source statement
+- Lexical block flag, marking whether the current instruction is the starting instruction of a lexical block
+- Other auxiliary information
 
-这种矩阵结构建立了机器指令与源代码之间的双向映射关系。当调试器需要在某行源码处设置断点时，可以通过查询行号表找到对应的第一条指令地址;当程序执行出现异常时，也可以根据当前的指令地址反查对应的源码位置，帮助开发者快速定位问题。这种双向映射机制为源码级调试提供了重要支撑。
+This matrix structure establishes a bidirectional mapping relationship between machine instructions and source code. When a debugger needs to set a breakpoint at a certain source line, it can find the corresponding first instruction address by querying the line number table; when a program execution exception occurs, it can also look up the corresponding source location based on the current instruction address, helping developers quickly locate the problem. This bidirectional mapping mechanism provides important support for source-level debugging.
 
-### 数据压缩
+### Data Compression
 
-**程序中的指令数量通常非常庞大，如果在行号表中为每条指令都单独分配一行来存储映射关系，将会导致行号表的体积急剧膨胀。**
+**The number of instructions in a program is usually very large. If each instruction in the line number table is allocated a separate row to store the mapping relationship, it would cause the line number table's size to expand dramatically.**
 
-为了有效压缩行号表的大小，DWARF采用了以下几种关键优化策略：
+To effectively compress the size of the line number table, DWARF adopts several key optimization strategies:
 
-- 对于每条源码语句对应的多条机器指令，**只记录第一条指令的映射关系**，因为这已足够确定源码位置；
-- 将行号表数据转换为更紧凑的**字节码指令序列**形式。这种方式可以：
-  - 省略相邻指令间相同的列值，避免冗余存储
-  - 对行号、列号等使用增量编码，即只存储与前一条记录的差值，这样通常只需要更少的位数
-  - 采用特殊的编码方案来处理常见模式
+- For multiple machine instructions corresponding to each source statement, **only record the mapping relationship of the first instruction**, as this is sufficient to determine the source location;
+- Convert line number table data into a more compact **bytecode instruction sequence** form. This approach can:
+  - Omit identical column values between adjacent instructions, avoiding redundant storage
+  - Use incremental encoding for line numbers, column numbers, etc., storing only the difference from the previous record, which typically requires fewer bits
+  - Use special encoding schemes to handle common patterns
 
-通过这些精心设计的压缩策略，行号表的存储效率得到了显著提升。DWARF最终将压缩后的行号表编码为一系列字节码指令，形成"**行号表程序**"。
+Through these carefully designed compression strategies, the storage efficiency of the line number table has been significantly improved. DWARF ultimately encodes the compressed line number table as a series of bytecode instructions, forming a "**line number program**".
 
-调试器在使用时，会通过一个专门设计的**有穷状态机**来解释执行这些字节码指令。随着指令的逐条执行，完整的行号表就被逐步还原出来。这种设计既保证了数据的紧凑存储，又确保了运行时的高效访问。
+When using it, the debugger interprets and executes these bytecode instructions through a specially designed **finite state machine**. As the instructions are executed one by one, the complete line number table is gradually reconstructed. This design ensures both compact data storage and efficient runtime access.
 
-### 详细设计
+### Detailed Design
 
-#### 常用术语
+#### Common Terms
 
-在介绍行号表之前，我们先来了解几个重要的术语：
+Before introducing the line number table, let's understand several important terms:
 
-- 状态机（State Machine）：一个虚拟的执行器，用于解释执行字节码指令序列。行号表被编码为字节码指令，状态机通过执行这些指令来重建完整的行号表矩阵。
-- 行号程序（Line Number Program）：由一系列字节码指令组成的序列，这些指令编码了编译单元的行号表信息。状态机通过执行这些指令来还原行号表的内容。
-- 基本块（Basic Block）：一段连续的指令序列，具有以下特点：
+- State Machine: A virtual executor used to interpret and execute bytecode instruction sequences. The line number table is encoded as bytecode instructions, and the state machine reconstructs the complete line number table matrix by executing these instructions.
+- Line Number Program: A sequence composed of a series of bytecode instructions that encode the line number table information of the compilation unit. The state machine reconstructs the line number table content by executing these instructions.
+- Basic Block: A continuous sequence of instructions with the following characteristics:
+  - Only the first instruction can be a jump target
+  - Only the last instruction can perform control transfer
+  - Procedure calls cause the end of a basic block
+  Basic blocks are defined from a control flow perspective, emphasizing the continuity of instruction execution and jump characteristics. A basic block doesn't necessarily correspond to a specific source code structure.
+- Sequence: A continuous collection of target machine instructions. Note that a compilation unit may generate multiple discontinuous instruction sequences, so we cannot assume that all instructions in a compilation unit are stored contiguously. Sequences are defined from a memory layout perspective, emphasizing the storage location of instructions in memory.
 
-  - 只有第一条指令可以作为跳转目标
-  - 只有最后一条指令可以进行控制转移
-  - 过程调用会导致基本块的结束
-    基本块是从控制流角度定义的概念，强调指令执行的连续性和跳转特性。基本块不一定对应着特定的源代码结构。
-- 序列（Sequence）：一段连续的目标机器指令集合。需要注意的是，一个编译单元可能会生成多个不连续的指令序列，因此不能假设编译单元中的所有指令都是连续存储的。序列是从内存布局角度定义的概念，强调指令在内存中的存储位置。
+A basic block must be a continuous instruction sequence, but a continuous instruction sequence doesn't necessarily form a basic block (may not satisfy the conditions of a basic block). Basic blocks emphasize control flow characteristics, while sequences focus more on the physical storage characteristics of instructions.
 
-一个基本块必定是一个连续的指令序列，但一个连续的指令序列不一定构成一个基本块（不一定满足基本块的条件）。基本块更强调控制流的特性，而序列更关注指令的物理存储特性。
+> ps: No need to deliberately understand or distinguish???
 
-> ps: 不需要刻意去理解、区分???
+#### State Machine Registers
 
-#### 状态机寄存器
+The line number table information state machine contains the following registers:
 
-行号表信息状态机包含以下寄存器：
+- address: Program Counter (PC) value, storing the machine instruction address generated by the compiler
+- op_index: Unsigned integer, representing the operation index value. The combination of address and op_index forms the operation pointer, which can reference any operation in the instruction sequence
+- file, line, column: Source code location triple, containing filename, line number, and column number
+- is_stmt: Boolean value, identifying whether the current instruction is a suggested breakpoint location (such as the first instruction of a statement)
+- basic_block: Boolean value, identifying whether the current instruction is the starting position of a lexical block
+- end_sequence: Boolean value, identifying whether the current address is the first byte after the end of an instruction sequence. When end_sequence is true, other information in the same row is meaningless
+- prologue_end: Boolean value, identifying the position in the function prologue where execution should pause, whether the current position is suitable for setting a function entry breakpoint
+- epilogue_begin: Boolean value, identifying the position in the function epilogue where execution should pause, whether the current position is suitable for setting a function exit breakpoint
+- isa: Unsigned integer, identifying the instruction set architecture to which the current instruction belongs
+- discriminator: Unsigned integer, assigned by the compiler, used to distinguish multiple code blocks at the same source location. If a source location corresponds to only a single block, the value is 0
 
-- address: 程序计数器(PC)值,存储编译器生成的机器指令地址
-- op_index: 无符号整数,表示操作的索引值。address和op_index组合构成操作指针,可引用指令序列中的任意操作
-- file、line、column: 源代码位置的三元组,包含文件名、行号和列号
-- is_stmt: 布尔值,标识当前指令是否为建议的断点位置(如语句的第一条指令)
-- basic_block: 布尔值,标识当前指令是否为词法块的起始位置
-- end_sequence: 布尔值,标识当前地址是否为指令序列结束后的第一个字节。当end_sequence为true时,同一行的其他信息无意义
-- prologue_end: 布尔值,标识函数序言中应该暂停执行的位置，当前位置是否适合设置函数入口断点
-- epilogue_begin: 布尔值,标识函数结尾中应该暂停执行的位置，当前位置是否适合设置函数退出前断点
-- isa: 无符号整数,标识当前指令所属的指令集架构
-- discriminator: 无符号整数,由编译器分配,用于区分同一源码位置的多个代码块。若源码位置只对应单个块,则值为0
-
-行号表程序开始执行时,状态机寄存器的初始状态如下:
+When the line number program starts executing, the initial state of the state machine registers is as follows:
 
 <img alt="regs_initial_states" src="assets/line_num_table_registers_initial_states.png" width="480px"/>
 
-#### 字节码指令
+#### Bytecode Instructions
 
-行号程序中的字节码指令分为以下三类：
+The bytecode instructions in the line number program are divided into the following three categories:
 
-1. 特殊操作码（Special Opcodes）
+1. Special Opcodes
+   - Represented by a single ubyte (unsigned byte) as the opcode
+   - Don't contain any operands
+   - Constitute the vast majority of instructions in the line number program
+   - Compact design, high execution efficiency
+2. Standard Opcodes
+   - Use a ubyte to represent the basic opcode
+   - Can be followed by 0 or more LEB128 encoded operands
+   - The opcode itself determines the number and meaning of operands
+   - The line number program header explicitly specifies the number of operands for each standard opcode, facilitating parsing
+3. Extended Opcodes
+   - Use multi-byte opcode design
+   - First byte is fixed as 0, used to identify extended opcodes
+   - Followed by a LEB128 encoded length value, representing the total number of bytes in the instruction (excluding the identification byte)
+   - Finally, the instruction data, where the first byte is the extended opcode of type ubyte
+   - Support more complex instruction encoding, with good extensibility
 
-   - 由单个ubyte（无符号字节）表示操作码
-   - 不包含任何操作数
-   - 构成了行号表程序中的绝大多数指令
-   - 设计紧凑，执行效率高
-2. 标准操作码（Standard Opcodes）
+#### Line Number Program Header
 
-   - 以一个ubyte表示基本操作码
-   - 后面可跟随0个或多个LEB128编码的操作数
-   - 操作码本身决定了操作数的数量和含义
-   - 行号表程序头部会显式指明每个标准操作码的操作数数量，便于解析
-3. 扩展操作码（Extended Opcodes）
+The optimal encoding method for line number information depends to some extent on the target machine's architecture. The line number program header contains key information needed by the debugger to decode and execute line number program instructions.
 
-   - 采用多字节操作码设计
-   - 第一个字节固定为0，用于标识扩展操作码
-   - 随后是LEB128编码的长度值，表示指令的总字节数（不含标识字节）
-   - 最后是指令数据，其中首字节为ubyte类型的扩展操作码
-   - 支持更复杂的指令编码，具有良好的扩展性
+Each compilation unit's line number program starts with a header containing the following fields:
 
-#### 行号程序头
+- unit_length (initial length): Total number of bytes of line number information for this compilation unit (excluding the current field itself)
+- version (uhalf): Version number, this is a version number specific to line number information, independent of the DWARF version number
+- header_length: Offset from the end of this field to the first byte of the line number program. In 32-bit DWARF, it's a 4-byte unsigned integer; in 64-bit DWARF, it's an 8-byte unsigned integer
+- minimum_instruction_length (ubyte): Minimum byte length of target machine instructions. Participates in calculations with maximum_operations_per_instruction when modifying address and op_index registers
+- maximum_operations_per_instruction (ubyte): Maximum number of operations that can be encoded in a single instruction. Participates in calculations with minimum_instruction_length when modifying address and op_index registers
+- default_is_stmt (ubyte): Initial value of the state machine register is_stmt. For multiple machine instructions corresponding to a source statement, at least one instruction's is_stmt should be true, as a recommended breakpoint location
+- line_base (sbyte): Used for special opcode calculations, see below
+- line_range (sbyte): Used for special opcode calculations, see below
+- opcode_base (ubyte): Value of the first special opcode, usually one greater than the maximum standard opcode value. If this value is less than the maximum standard opcode value, standard opcodes greater than opcode_base will be treated as special opcodes in the current compilation unit; if this value is greater than the maximum standard opcode value, the gap in between can be used for third-party extensions
+- standard_opcode_lengths (ubyte array): Number of LEB128 encoded operands corresponding to each standard opcode
+- include_directories (path name sequence): List of search paths for other files included by the compilation unit
+- file_names (file entry sequence): All source filenames related to the current line number table, including the main source file and included files
 
-行号信息的最佳编码方式在一定程度上取决于目标机器的体系结构。行号程序头包含了调试器解码和执行行号程序指令时所需的关键信息。
+#### Line Number Program
 
-每个编译单元的行号程序都以一个header开头，其包含以下字段：
+The main goal of the line number program is to build a matrix representing the target machine instruction sequences generated in the compilation unit. In each instruction sequence, the address (operation pointer) usually only increases (but due to pipeline scheduling or other optimizations, the line number may decrease).
 
-- unit_length（initial length）：该编译单元的行号信息总字节数（不包含当前字段本身）
-- version（uhalf）：版本号，这是行号信息特有的版本号，与DWARF版本号相互独立
-- header_length：从该字段结束到行号程序第一个字节的偏移量。在32位DWARF中为4字节无符号整数，在64位DWARF中为8字节无符号整数
-- minimum_instruction_length（ubyte）：目标机器指令的最小字节长度。在修改address和op_index寄存器时，与maximum_operations_per_instruction一起参与计算
-- maximum_operations_per_instruction（ubyte）：单条指令可编码的最大操作数。在修改address和op_index寄存器时，与minimum_instruction_length一起参与计算
-- default_is_stmt（ubyte）：状态机寄存器is_stmt的初始值。对于源码语句对应的多条机器指令，至少要有一条指令的is_stmt为true，作为推荐的断点位置
-- line_base（sbyte）：用于特殊操作码的计算，详见下文
-- line_range（sbyte）：用于特殊操作码的计算，详见下文
-- opcode_base（ubyte）：第一个特殊操作码的值，通常比最大标准操作码值大1。如果该值小于最大标准操作码值，则大于opcode_base的标准操作码在当前编译单元中将被视为特殊操作码；如果该值大于最大标准操作码值，则中间的空隙可用于第三方扩展
-- standard_opcode_lengths（ubyte数组）：每个标准操作码对应的LEB128编码操作数的数量
-- include_directories（路径名序列）：编译单元包含的其他文件的搜索路径列表
-- file_names（文件条目序列）：与当前行号表相关的所有源文件名，包括主源文件和被包含文件
+The line number program consists of three types of opcodes: special opcodes, standard opcodes, and extended opcodes. Here we focus on how special opcodes work. If you want to know more about standard opcodes or extended opcodes, please refer to sections 6.2.5.2 and 6.2.5.3 of the DWARF v4 standard.
 
-#### 行号表程序
+When each special opcode (represented by a single ubyte) is executed, it has the following seven effects on the state machine:
 
-行号程序的主要目标是构建一个矩阵，用于表示编译单元中生成的目标机器指令序列。在每个指令序列中，地址（操作指针）通常只会递增（但由于流水线调度或其他优化，行号可能会减少）。
+1. Add a signed value to the line register
+2. Update the operation pointer by increasing the values of address and op_index registers
+3. Add a new row to the matrix based on the current state machine register values
+4. Set the basic_block register to "false"
+5. Set the prologue_end register to "false"
+6. Set the epilogue_begin register to "false"
+7. Set the discriminator register to 0
 
-行号程序由三类操作码组成：特殊操作码、标准操作码和扩展操作码。这里我们重点介绍特殊操作码的工作原理。如果您想了解标准操作码或扩展操作码的详细信息，请参考DWARF v4标准的6.2.5.2和6.2.5.3章节。
+All special opcodes perform these seven same operations, their only difference being the increment values for the line, address, and op_index registers.
 
-每个特殊操作码（以单个ubyte表示）执行时，会对状态机产生以下七个影响：
+The value of a special opcode is chosen based on the specific values that need to be added to the line, address, and op_index registers. The maximum line number increment is determined by the line_base and line_range fields in the line number program header, calculated as: line_base + line_range - 1. If the required line number increment exceeds this maximum value, standard opcodes must be used instead. The operation advance represents the number of operations to skip when advancing the operation pointer.
 
-1. 给行寄存器(line)增加一个有符号数值
-2. 通过增加address和op_index寄存器的值来更新操作指针
-3. 根据当前状态机寄存器的值在矩阵中添加新的一行
-4. 将basic_block寄存器置为"false"
-5. 将prologue_end寄存器置为"false"
-6. 将epilogue_begin寄存器置为"false"
-7. 将discriminator寄存器置为0
-
-所有特殊操作码都执行这七个相同的操作，它们的区别仅在于对line、address和op_index寄存器的增量值不同。
-
-特殊操作码的值是根据需要添加到line、address和op_index寄存器的具体数值来选择的。行号增量的最大值由行号程序头中的line_base和line_range字段决定，计算公式为：line_base + line_range - 1。如果所需的行号增量超过了这个最大值，就必须改用标准操作码。operation advance表示操作指针前进时要跳过的操作数数量。
-
-**计算特殊操作码公式如下**：
+**The formula for calculating special opcodes is as follows**:
 
 ```
 opcode = (desired line increment - line_base) + (line_range * operation advance) + opcode_base
 ```
 
-如果结果操作码大于255，则必须改用标准操作码。
+If the resulting opcode is greater than 255, standard opcodes must be used instead.
 
-当*maximum_operations_per_instruction*为1时，*operation advance*就是地址增量除以*minimum_instruction_length*。
+When *maximum_operations_per_instruction* is 1, *operation advance* is the address increment divided by *minimum_instruction_length*.
 
-**要解码特殊操作码公式如下**，要从操作码本身中减去opcode_base以提供调整后的操作码。*operation advance*是调整后的操作码除以*line_range*的结果。new address和 new op_index值由下式给出：
+**To decode special opcodes, the formula is as follows**. Subtract opcode_base from the opcode itself to provide the adjusted opcode. *operation advance* is the result of dividing the adjusted opcode by *line_range*. The new address and new op_index values are given by:
 
 ```
 adjusted opcode = opcode – opcode_base 
@@ -167,101 +163,101 @@ new address = address +
 new op_index = (op_index + operation advance) % maximum_operations_per_instruction
 ```
 
-当*maximum_operations_per_instruction*字段为1时，*op_index*始终为0，这些计算将简化为DWARF版本v3中为地址提供的计算。 line increment的数值是line_base加上以调整后操作码除以line_range的模的和。 就是：
+When the *maximum_operations_per_instruction* field is 1, *op_index* is always 0, and these calculations will simplify to the calculations provided for addresses in DWARF version v3. The line increment value is the sum of line_base and the modulo of the adjusted opcode divided by line_range. That is:
 
 ```
 line increment = line_base + (adjusted opcode % line_range)
 ```
 
-例如，当**假设opcode_base为13，line_base为-3，line_range为12，minimum_instruction_length为1，maximum_operations_per_instruction为1** ，下表中列出了当前假设下，当源码行相差[-3,8]范围内时、指令地址相差[0,20]时计算得到的特殊操作码值。
+For example, when **assuming opcode_base is 13, line_base is -3, line_range is 12, minimum_instruction_length is 1, maximum_operations_per_instruction is 1**, the following table lists the calculated special opcode values when source lines differ in the range [-3,8] and instruction addresses differ in the range [0,20] under the current assumptions.
 
 <img alt="advance_btw_pc_and_lineno" src="assets/advance_btw_pc_and_lineno.png" width="480px"/>
 
-### 示例演示
+### Example Demonstration
 
-#### 生成行号程序
+#### Generating Line Number Program
 
-Figure 60中给出了简单的源文件和Intel 8086处理器的最终机器代码，在此基础上让我们来模拟行号表生成过程。
+Figure 60 shows a simple source file and the final machine code for the Intel 8086 processor. Based on this, let's simulate the line number table generation process.
 
 <img alt="generate_line_num_table" src="assets/generate_line_num_table1.png" width="480px" />
 
-现在，让我们逐步构建"行号表程序"。 实际上，我们需要先将源代码编译为汇编代码，然后计算每个连续语句的指令地址和行号的增量，根据 "指令地址增量(operation advance)" 以及 "行号增量(line increment)" 来计算操作码，这些操作码构成一个sequence，属于行号程序的一个部分。
+Now, let's build the "line number program" step by step. Actually, we need to first compile the source code into assembly code, then calculate the instruction address and line number increments for each consecutive statement, and calculate the opcodes based on the "instruction address increment (operation advance)" and "line number increment (line increment)". These opcodes form a sequence, which is part of the line number program.
 
-例如, `2: main()` and `4: printf`, 这两条语句各自第一条指令的地址的增量为 `0x23c-0x239=3`, 两条源语句的行号增量为 `4-2=2`. 然后我们可以通过函数 `Special(lineIncr,operationAdvance)` 来计算对应的特殊操作码，即 `Special(2, 3)`。
+For example, `2: main()` and `4: printf`, the address increment of the first instruction of these two statements is `0x23c-0x239=3`, and the line number increment of the two source statements is `4-2=2`. Then we can calculate the corresponding special opcode through the function `Special(lineIncr,operationAdvance)`, that is, `Special(2, 3)`.
 
 <img alt="generate_line_num_table2" src="assets/generate_line_num_table2.png" width="480px" />
 
-回想一下上面提及的特殊操作码的计算公式：
+Recall the special opcode calculation formula mentioned above:
 
 ```
 opcode = (desired line increment - line_base) + (line_range * operation advance) + opcode_base
 ```
 
-假设行号程序头包括以下内容（以下不需要的头字段未显示）：
+Assuming the line number program header includes the following content (header fields not needed below are not shown):
 
 <img alt="line_num_table_header" src="assets/line_num_table_header.png"  width="480px" />
 
-然后代入上述计算公式，Special(2, 3)的计算如下:
+Then substituting into the above calculation formula, the calculation of Special(2, 3) is as follows:
 
 ```
 opcode = (2 - 1) + (15 * 3) + 10 = 56 = 0x38
 ```
 
-这样就计算得到了构建行号表从 `2: main()`到 `4: printf`对应的行所需要的特殊操作码0x38。然后逐一处理所有相邻的源语句：
+This calculates the special opcode 0x38 needed to build the line number table from `2: main()` to `4: printf`. Then process all adjacent source statements one by one:
 
-1. 第2行才生成指令，所以需要一个 `DW_LNS_advance_pc 0x239`，对应bytes为0x2,0xb9,0x04；
-2. 源码第0行~第2行，源码增加2行，PC增加0，使用 `SPECIAL(2,0) = (2-1) + (15*0) + 10 = 11 = 0xb`，对应bytes为0xb；
-3. 源码第2行~第4行，源码增加2行，PC增加0x23c-0x239=3，使用 `SPECIAL(2,3) = (2-1) + (15*3) + 10 = 0x38`，对应bytes为0x38；
-4. 源码第4行~第5行，源码增加1行，PC增肌0x244-0x23c=8，使用 `SPECIAL(1,8) = (1-1) + (15*8) + 10 = 0x82`，对应bytes为0x82;
-5. 源码第5行~第6行，源码增加1行，PC增加0x24b-0x244=7，使用 `SPECIAL(1,7) = (1-1) + (15*7) + 10 = 0x73`，对应bytes为0x73;
-6. 已经没有源码行了，最后结束指令地址是0x24d，比之前源码第6行处指令地址0x244多了2，使用 `DW_LNS_advance_pc 0x2`，对应bytes为0x2,0x2；
-7. 此时已经到了指令的结束，使用 `DW_LNE_end_sequence` 结束，对应bytes为0x0,0x1,0x1；
+1. Line 2 generates instructions, so we need a `DW_LNS_advance_pc 0x239`, corresponding to bytes 0x2,0xb9,0x04;
+2. Source lines 0~2, source code increases by 2 lines, PC increases by 0, use `SPECIAL(2,0) = (2-1) + (15*0) + 10 = 11 = 0xb`, corresponding to bytes 0xb;
+3. Source lines 2~4, source code increases by 2 lines, PC increases by 0x23c-0x239=3, use `SPECIAL(2,3) = (2-1) + (15*3) + 10 = 0x38`, corresponding to bytes 0x38;
+4. Source lines 4~5, source code increases by 1 line, PC increases by 0x244-0x23c=8, use `SPECIAL(1,8) = (1-1) + (15*8) + 10 = 0x82`, corresponding to bytes 0x82;
+5. Source lines 5~6, source code increases by 1 line, PC increases by 0x24b-0x244=7, use `SPECIAL(1,7) = (1-1) + (15*7) + 10 = 0x73`, corresponding to bytes 0x73;
+6. No more source lines, the final instruction address is 0x24d, 2 more than the instruction address 0x244 at source line 6, use `DW_LNS_advance_pc 0x2`, corresponding to bytes 0x2,0x2;
+7. At this point, we've reached the end of the instructions, use `DW_LNE_end_sequence` to end, corresponding to bytes 0x0,0x1,0x1;
 
-最终，我们就得到了如下行号表程序，最终这个ByteStream，会被写入.debug_line section:
+Finally, we get the following line number program, and this ByteStream will be written to the .debug_line section:
 
 <img alt="generate_line_num_table3" src="assets/generate_line_num_table3.png" width="480px" />
 
-#### 执行行号程序
+#### Executing Line Number Program
 
-构建完整的行号表，我们需要先从目标程序中读取DWARF数据，然后再读取出行号表程序，就可以用准备好的行号表状态机来执行：
+To build the complete line number table, we need to first read the DWARF data from the target program, then read out the line number program, and then execute it with the prepared line number table state machine:
 
-- 读取到行号表程序的header，获取某些设置字段值；
-- 遍历行号表程序中的字节码指令，逐一执行
-  - 解码出opcode、address、pc advance、line advance、op_index
-  - 对行号表进行更新或者追加
-- 最终构建出我们期望中的行号表矩阵
+- Read the line number program header to get certain setting field values;
+- Traverse the bytecode instructions in the line number program, executing them one by one
+  - Decode the opcode, address, pc advance, line advance, op_index
+  - Update or append to the line number table
+- Finally build the line number table matrix we expect
 
-假如使用Go开发调试器的话，Go标准库在读取ELF文件中的DWARF数据时，已经自动完成了每个编译单元中的行号表数据的解析，dwarf.LineReader中读取出来的LineEntries已经是解码、执行字节码指令之后得到的最终的行号表矩阵中的Rows相关的数据了。我们直接拿来进行查询即可。
+If developing a debugger in Go, the Go standard library has already automatically completed the parsing of line number table data in each compilation unit when reading DWARF data from ELF files. The LineEntries read from dwarf.LineReader are already the data related to Rows in the final line number table matrix obtained after decoding and executing bytecode instructions. We can use them directly for queries.
 
-[hitzhangjie/dwarfviewer](https://github.com/hitzhangjie/dwarfviewer) 就是在Go 标准库基础上实现了行号表信息的查看逻辑：
+[hitzhangjie/dwarfviewer](https://github.com/hitzhangjie/dwarfviewer) implements the line number table information viewing logic based on the Go standard library:
 
 <img alt="dwarfviewer linetable view" src="assets/dwarfviewer_linetable_view.png" width="640px" />
 
-#### 查询行号程序
+#### Querying Line Number Program
 
-查询的情景有两种：根据源码位置查询PC，根据PC查询源码位置，我们简单说下查询的逻辑。
+There are two query scenarios: querying PC based on source location, and querying source location based on PC. Let's briefly discuss the query logic.
 
-1）根据源码位置查询PC：
+1) Query PC based on source location:
 
-- 我们知道了源码位置的三元组文件名、行号、列号，通过文件名我们可以知道对应的编译单元信息
-- 找到编译单元对应的DIE，找到其行号表
-- 查表 `entry.file==$sourcefile && entry.line==$lineno`，找到对应记录行的PC
-- 结束
+- We know the source location triple of filename, line number, and column number, and through the filename we can know the corresponding compilation unit information
+- Find the DIE corresponding to the compilation unit, find its line number table
+- Look up the table `entry.file==$sourcefile && entry.line==$lineno`, find the PC of the corresponding record row
+- End
 
-2）根据PC查找源码位置：
+2) Query source location based on PC:
 
-- 遍历所有的类型为编译单元的DIEs，查询[lowpc,highpc]包含了该PC的DIE，确定所属的编译单元DIE
-- 从该DIE中找到其行号表
-- 查表 `entry.PC<=$PC && nextEntry.PC>$PC`，找到对应记录行，得到其file, line, col信息
-- 结束
+- Traverse all types of DIEs of type compilation unit, query [lowpc,highpc] contains the DIE of the PC, determine the corresponding compilation unit DIE
+- Find its line number table from the DIE
+- Look up the table `entry.PC<=$PC && nextEntry.PC>$PC`, find the corresponding record row, get its file, line, col information
+- End
 
-### 本文总结
+### Conclusion
 
-行号表是DWARF调试信息中的核心组件，它通过建立源代码位置与机器指令地址之间的映射关系，为源码级调试提供了基础支持。本文从行号表的功能、存储结构、数据编码、详细设计到实际应用，全面介绍了行号表的工作原理。通过精心设计的压缩策略和状态机机制，行号表既保证了数据的紧凑存储，又确保了调试器能够高效地访问这些信息，使得开发者能够更方便地进行程序调试和问题定位。
+The line number table is the core component of DWARF debugging information, providing basic support for source-level debugging through the establishment of a mapping relationship between source code locations and machine instruction addresses. This article comprehensively introduces the working principle of the line number table from its function, storage structure, data encoding, detailed design to practical application. Through carefully designed compression strategies and state machine mechanism, the line number table not only ensures compact data storage but also ensures that the debugger can efficiently access this information, allowing developers to more conveniently perform program debugging and problem location.
 
-ps：由于篇幅原因，本文也跳过了一些DWARF v4行号表细节，感兴趣想进一步精进的读者可以自行了解，学习时也可以使用 [hitzhangjie/dwarfviewer](https://github.com/hitzhangjie/dwarfviewer) 来查看编译单元的行号表程序。
+ps: Due to the length of this article, this article also skipped some DWARF v4 line number table details. Interested readers can learn more by themselves, and they can also use [hitzhangjie/dwarfviewer](https://github.com/hitzhangjie/dwarfviewer) to view the line number table program of the compilation unit.
 
-### 参考资料
+### Reference
 
 * DWARFv4, https://dwarfstd.org/doc/DWARF4.pdf
 * Introduction to the DWARF Debugging Format, https://dwarfstd.org/doc/Debugging-using-DWARF-2012.pdf

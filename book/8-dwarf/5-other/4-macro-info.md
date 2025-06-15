@@ -1,8 +1,8 @@
-## 宏信息
+## Macro Information
 
-大多数调试器很难显示和调试具有宏的代码。 用户看到带有宏的原始源文件，而代码则对应于宏展开后的内容。
+Most debuggers have difficulty displaying and debugging code with macros. Users see the original source file with macros, while the code corresponds to the expanded macro content.
 
-DWARF调试信息中包含了程序中定义的宏的描述。 这是非常基本的信息，但是调试器可以使用它来显示宏的值或将宏翻译成相应的源语言。
+The DWARF debugging information includes descriptions of macros defined in the program. This is very basic information, but debuggers can use it to display macro values or translate macros into the corresponding source language.
 
-c\c++等需要支持宏的编程语言中需要用到这里的信息.debug_macro，go语言中用不到，这里就不展开了。
+Programming languages like C/C++ that need to support macros require this information (.debug_macro). Since Go language doesn't use macros, we won't elaborate on this here.
 

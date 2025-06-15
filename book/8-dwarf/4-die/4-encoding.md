@@ -1,73 +1,73 @@
-## DIE数据编码
+## DIE Data Encoding
 
-DWARF中的所有调试信息条目（DIE, Debugging Information Entry），它们可以用来描述程序中的数据、类型、代码，在之前内容中我们已经见识过了描述不同类型程序构造的DIE Tags、Attributes。DIE之间还存在两种可能的链接或者引用关系：1）Children关系：表示DIE与其子DIE之间的父子关系；2）Siblings关系：表示同级DIE之间的兄弟关系。这种结构使得DWARF能够完整地描述程序的调试信息，如果要不加优化完整地存储这样的结构，也会面临数据冗余和存储空间问题。
+All Debugging Information Entries (DIEs) in DWARF can be used to describe data, types, and code in a program. In previous content, we have seen DIE Tags and Attributes that describe different types of program constructs. DIEs also have two possible link or reference relationships: 1) Children relationship: represents the parent-child relationship between a DIE and its child DIEs; 2) Siblings relationship: represents the sibling relationship between DIEs at the same level. This structure allows DWARF to fully describe the debugging information of a program. However, if such a structure is stored without optimization, it can lead to data redundancy and storage space issues.
 
-所以本节我们来看看DIE数据的编码和存储方式。
+Therefore, this section will explore the encoding and storage methods of DIE data.
 
-### 数据压缩的必要性
+### Necessity of Data Compression
 
-DWARF调试信息通常包含大量重复和冗余数据，例如：
+DWARF debugging information typically contains a large amount of repetitive and redundant data, for example:
 
-- 相同类型的变量可能有相同的属性列表
-- 相似的函数可能有相似的结构信息
-- 大量的类型信息可能被多次引用
+- Variables of the same type may have the same attribute list.
+- Similar functions may have similar structural information.
+- A large amount of type information may be referenced multiple times.
 
-为了减少存储空间占用，DWARF提供了几种数据压缩的措施。
+To reduce storage space usage, DWARF provides several data compression measures.
 
-### 措施1：树前序遍历扁平化
+### Measure 1: Tree Pre-order Traversal Flattening
 
-**原理**：
+**Principle**:
 
-- 采用前序遍历的方式访问DIE树
-- 按照访问顺序将DIE依次存储
-- 不再显式存储DIE之间的链接关系
+- Use pre-order traversal to access the DIE tree.
+- Store DIEs in the order of access.
+- No longer explicitly store the link relationships between DIEs.
 
-**实现方式**：
+**Implementation**:
 
-- 使用特殊属性来维护DIE之间的关系
-- `DW_AT_sibling`：指向下一个兄弟DIE
-- `DW_AT_type`：指向类型DIE
-- 其他属性：根据需要维护其他关系
+- Use special attributes to maintain relationships between DIEs.
+- `DW_AT_sibling`: Points to the next sibling DIE.
+- `DW_AT_type`: Points to the type DIE.
+- Other attributes: Maintain other relationships as needed.
 
-**优势**：
+**Advantages**:
 
-- 消除了显式的链接指针
-- 简化了数据存储结构
-- 便于顺序访问和解析
+- Eliminates explicit link pointers.
+- Simplifies the data storage structure.
+- Facilitates sequential access and parsing.
 
-### 措施2：缩写表机制(Abbreviation Table)
+### Measure 2: Abbreviation Table Mechanism
 
-**原理**：
+**Principle**:
 
-- 将DIE的tag值和attributes类型存储在缩写表中
-- DIE中只存储缩写表的索引和属性值
-- 通过复用相同的tag和属性列表来减少存储空间
+- Store the tag value and attribute types of DIEs in the abbreviation table.
+- DIEs only store the index of the abbreviation table and attribute values.
+- Reduce storage space by reusing the same tag and attribute lists.
 
-**缩写表结构**：
-每个缩写包含：
+**Abbreviation Table Structure**:
+Each abbreviation includes:
 
-- tag值：DIE的类型
-- has_children标志：指示该DIE是否有子DIE
-- 属性列表：包含属性类型和值类型
+- Tag value: The type of the DIE.
+- Has_children flag: Indicates whether the DIE has child DIEs.
+- Attribute list: Contains attribute types and value types.
 
-**示例**：
-假设有多个变量DIE，它们具有相同的tag(DW_TAG_variable)和属性列表(DW_AT_name, DW_AT_type)，但属性值不同：
+**Example**:
+Suppose there are multiple variable DIEs with the same tag (`DW_TAG_variable`) and attribute list (`DW_AT_name`, `DW_AT_type`), but different attribute values:
 
-- 在缩写表中存储一次tag和属性列表
-- 每个DIE只存储缩写表索引和具体的属性值
-- 大大减少了重复数据的存储
+- Store the tag and attribute list once in the abbreviation table.
+- Each DIE only stores the abbreviation table index and specific attribute values.
+- Significantly reduces the storage of repetitive data.
 
-**图 9 缩写表示例**：
+**Figure 9 Abbreviation Table Example**:
 ![img](assets/clip_image011.png)
 
-### 措施3：跨编译单元引用
+### Measure 3: Cross-Compilation Unit References
 
-DWARF v3引入了一种允许跨编译单元引用DWARF数据的机制：
+DWARF v3 introduced a mechanism that allows cross-compilation unit references to DWARF data:
 
-- 允许一个编译单元引用另一个编译单元中的DIE
-- 通过特殊的引用属性实现
-- 这种方式不常用，但在某些场景下可以进一步减少数据冗余
+- Allows a compilation unit to reference a DIE in another compilation unit.
+- Implemented through special reference attributes.
+- This method is not commonly used but can further reduce data redundancy in certain scenarios.
 
-### 总结
+### Summary
 
-DWARF的数据编码和压缩策略主要针对DIE树结构，1）扁平化存储减少链接开销 2）缩写表机制减少重复数据 3）跨编译单元引用提供额外的优化空间。通过这些策略的共同作用，显著减少了调试信息在二进制文件中的存储空间占用，同时保持了调试信息的完整性和可访问性。
+DWARF's data encoding and compression strategies mainly target the DIE tree structure: 1) Flattening storage reduces link overhead, 2) The abbreviation table mechanism reduces repetitive data, and 3) Cross-compilation unit references provide additional optimization space. Through the combined effect of these strategies, the storage space of debugging information in binary files is significantly reduced, while maintaining the integrity and accessibility of the debugging information.

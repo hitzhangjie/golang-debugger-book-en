@@ -1,63 +1,63 @@
-## 其他调试数据
+## Other Debug Data
 
-我们在8.3节中提到了通过DIE描述变量、数据类型、可执行代码。8.4节要描述的调试信息不是DIE能描述的，这些信息也不出现在.debug_info section中，这些信息对于符号级调试也是至关重要的。
+In section 8.3, we discussed describing variables, data types, and executable code through DIE. Section 8.4 will describe debug information that cannot be described by DIE, and this information does not appear in the .debug_info section. This information is also crucial for symbolic debugging.
 
-这几种重要的调试信息，包括：1）加速访问表 2）行号表 3）宏信息；4）调用栈信息。和存储DIE数据面临类似的问题，这些表数据数据量也很大，也需要结合一定的编码策略优化存储。除了各个表特有的编码方式外，我们也会介绍一些DWARF数据共有的编码方式。
+These important types of debug information include: 1) Accelerated Access Tables 2) Line Number Tables 3) Macro Information 4) Call Frame Information. Similar to the challenges faced in storing DIE data, these table data also have large volumes and require certain encoding strategies for storage optimization. Besides the specific encoding methods for each table, we will also introduce some common encoding methods for DWARF data.
 
-### 重要的表数据
+### Important Table Data
 
-#### 加速访问（Accelerated Access）
+#### Accelerated Access
 
-调试器经常需要根据符号名、类型名、指令地址，快速定位到对应的DIE或者源码位置，比较笨的办法是遍历所有的DIEs，检查查询关键字符号名、类型名与DIEs描述的是否匹配，或者检查指令地址与对应的DIEs所表示的地址范围是否有包含关系。这是个办法，但是效率实在太低了，会影响调试时的体验、效率。
+Debuggers often need to quickly locate corresponding DIE or source code positions based on symbol names, type names, and instruction addresses. A naive approach would be to traverse all DIEs, checking if the query key symbol name or type name matches what the DIEs describe, or checking if the instruction address is contained within the address range represented by the corresponding DIEs. This is a method, but it's too inefficient and would affect the debugging experience and efficiency.
 
-为了加速查询效率，DWARF在生成调试信息时会创建三个加速查询表:
+To accelerate query efficiency, DWARF creates three accelerated query tables when generating debug information:
 
-- .debug_pubnames：输入全局对象或函数的符号名，快速定位到对应的DIE。比如输入"main"可以直接找到main函数的DIE，而不用遍历所有DIE。
-- .debug_pubtypes：输入类型名称，快速定位到描述该类型的DIE。比如输入"struct point"可以直接找到该结构体类型的DIE。
-- .debug_aranges：输入指令地址，快速定位到包含该地址的编译单元。这对于根据程序计数器(PC)查找对应的源码位置很有帮助。
+- .debug_pubnames: Input a global object or function symbol name to quickly locate the corresponding DIE. For example, entering "main" can directly find the DIE of the main function without traversing all DIEs.
+- .debug_pubtypes: Input a type name to quickly locate the DIE describing that type. For example, entering "struct point" can directly find the DIE for that structure type.
+- .debug_aranges: Input an instruction address to quickly locate the compilation unit containing that address. This is very helpful for finding the corresponding source code location based on the program counter (PC).
 
-#### 行号表（Line Number Table）
+#### Line Number Table
 
-DWARF行号表 (.debug_line)，包含了可执行程序机器指令的内存地址和对应的源代码行之间的映射关系。调试器需要这种映射来在用户单步执行程序时，将当前执行的机器指令地址转换为对应的源代码行，从而在源码中显示当前执行位置。行号表通常以字节码指令的形式存储，这些指令由行号表状态机执行，以生成完整的行号表。这种设计使得行号表可以高效地表示大量的地址到行号的映射，同时节省存储空间。
+The DWARF line number table (.debug_line) contains the mapping relationship between machine instruction memory addresses in the executable program and corresponding source code lines. Debuggers need this mapping to convert the current executing machine instruction address to the corresponding source code line when users step through the program, thus displaying the current execution position in the source code. The line number table is typically stored in the form of bytecode instructions, which are executed by the line number table state machine to generate the complete line number table. This design allows the line number table to efficiently represent a large number of address-to-line mappings while saving storage space.
 
-行号表中PC和源码位置的映射关系并不是简单的一对一关系，而是具有相当的复杂性。首先，一个源码行可能对应多条机器指令，这些指令在内存中可能不连续；其次，由于编译优化，机器指令的执行顺序可能与源码行的顺序不一致，比如循环展开、指令重排等优化会导致这种不一致；另外，内联函数、模板实例化、宏展开等特性也会使得一个源码位置对应多个PC地址，或者一个PC地址对应多个源码位置。DWARF行号表通过状态机的方式，使用一系列指令来描述这些复杂的映射关系，包括设置文件、设置行号、设置列号、设置指令地址等操作，从而能够准确记录这些复杂的对应关系。
+The mapping relationship between PC and source code positions in the line number table is not a simple one-to-one relationship, but rather quite complex. First, a source code line may correspond to multiple machine instructions, which may not be contiguous in memory; second, due to compilation optimizations, the execution order of machine instructions may not match the order of source code lines, such as loop unrolling and instruction reordering optimizations that can cause this inconsistency; additionally, features like inline functions, template instantiation, and macro expansion can make one source code position correspond to multiple PC addresses, or one PC address correspond to multiple source code positions. The DWARF line number table uses a state machine approach, using a series of instructions to describe these complex mapping relationships, including operations like setting files, setting line numbers, setting column numbers, and setting instruction addresses, thus accurately recording these complex correspondences.
 
-#### 宏信息（Macro Information）
+#### Macro Information
 
-大多数调试器很难显示和调试具有宏的代码。比如比较常见的问题是，用户看的是带有宏的原始源文件，而代码则对应于宏展开后的东西。DWARF调试信息中包含了对程序中定义的宏的描述。宏信息通常存储在 .debug_macro section 中，它记录了宏的定义、参数、展开后的内容以及宏定义的位置。调试器可以利用这些信息在调试过程中显示宏的实际展开内容，帮助开发者理解宏的行为和调试宏相关的问题。这对于使用大量宏的代码库尤为重要，因为宏的展开可能引入复杂的逻辑和潜在的错误。
+Most debuggers have difficulty displaying and debugging code with macros. For example, a common problem is that users see the original source file with macros, while the code corresponds to the expanded macro content. DWARF debug information includes descriptions of macros defined in the program. Macro information is typically stored in the .debug_macro section, which records macro definitions, parameters, expanded content, and macro definition locations. Debuggers can use this information to display the actual expanded content of macros during debugging, helping developers understand macro behavior and debug macro-related issues. This is particularly important for codebases that use many macros, as macro expansion can introduce complex logic and potential errors.
 
-C\C++是支持宏的编程语言，因此C\C++程序调试就比较依赖这部分调试信息支持。Go语言设计者有意废弃宏这种东西，而通过go generate、接口和组合、反射、泛型来提供相应的能力支持，所以我们后续不用在这部分倾注过多精力。
+C/C++ are programming languages that support macros, so debugging C/C++ programs relies heavily on this part of debug information support. Go language designers intentionally abandoned macros, instead providing corresponding capabilities through go generate, interfaces and composition, reflection, and generics, so we won't need to focus too much on this part later.
 
-#### 调用栈信息（Call Frame Information）
+#### Call Frame Information
 
-调用栈信息（CFI, Call Frame Information）是DWARF调试信息的一部分，通常存储在.debug_frame或.eh_frame section中。它描述了程序执行过程中栈帧的布局和变化，包括寄存器保存、栈指针调整以及如何恢复调用者的栈帧。CFI以表格或指令序列的形式存储，这些指令由调试器解释以重建调用栈。
+Call Frame Information (CFI) is part of DWARF debug information, typically stored in the .debug_frame or .eh_frame section. It describes the layout and changes of stack frames during program execution, including register preservation, stack pointer adjustments, and how to restore the caller's stack frame. CFI is stored in the form of tables or instruction sequences, which are interpreted by the debugger to rebuild the call stack.
 
-在调试过程中，调试器需要知道当前执行的函数是如何被调用的，以及如何访问函数的参数和局部变量。CFI提供了这些信息，使得调试器能够正确地展开调用栈，显示函数调用链，并帮助开发者理解程序的执行流程。这对于调试复杂的程序，尤其是涉及递归或异常处理的程序，尤为重要。
+During debugging, the debugger needs to know how the currently executing function was called and how to access the function's parameters and local variables. CFI provides this information, allowing the debugger to correctly unwind the call stack, display the function call chain, and help developers understand the program's execution flow. This is particularly important for debugging complex programs, especially those involving recursion or exception handling.
 
-CFI通过一系列指令来描述栈帧的变化，这些指令包括：
+CFI describes stack frame changes through a series of instructions, including:
 
-- **CFA（Canonical Frame Address）**：定义当前栈帧的基地址，通常指向调用者的栈帧顶部。
-- **寄存器规则**：描述如何恢复寄存器的值，例如，某些寄存器可能被保存在栈上。
-- **栈指针调整**：描述栈指针如何变化，以反映函数调用和返回时的栈帧调整。
+- **CFA (Canonical Frame Address)**: Defines the base address of the current stack frame, typically pointing to the top of the caller's stack frame.
+- **Register Rules**: Describe how to restore register values, for example, certain registers may be saved on the stack.
+- **Stack Pointer Adjustments**: Describe how the stack pointer changes to reflect stack frame adjustments during function calls and returns.
 
-调试器通过解释这些指令，可以重建调用栈，确定每个函数的栈帧位置，从而访问函数的参数和局部变量。这种机制使得调试器能够在程序执行过程中动态地展开调用栈，提供准确的调试信息。
+By interpreting these instructions, the debugger can rebuild the call stack, determine the stack frame position of each function, and thus access function parameters and local variables. This mechanism allows the debugger to dynamically unwind the call stack during program execution, providing accurate debug information.
 
-### 常用的编码方式
+### Common Encoding Methods
 
-DWARF不同类型的数据需要考虑编码方式以减少存储占用，除了前面需要单独介绍的DIE数据编码以及几种重要的信息表的数据编码外，还有一些共用的编码方式。
+Different types of DWARF data need to consider encoding methods to reduce storage usage. Besides the DIE data encoding and several important information table data encodings that need to be introduced separately, there are also some common encoding methods.
 
-#### 变长数据（Variable Length Data）
+#### Variable Length Data
 
-在整个DWARF调试信息表示中，整数值使用的非常广泛，从数据段中的偏移量，到数组长度、结构体大小，等等。由于大多数整数的实际值可能比较小，只用几位就可以表示，这意味着整数值的高位bits很多由零组成，那能否优化编码方式来节省存储占用呢？protobuf使用zigzag编码对整数进行编码，熟悉protobuf的读者应该不陌生。那我们看看DWARF调试信息是如何实现的。
+Throughout the DWARF debug information representation, integer values are used extensively, from offsets in data segments to array lengths, structure sizes, etc. Since most integer values may be relatively small, requiring only a few bits to represent, this means many high-order bits of integer values consist of zeros. Can we optimize the encoding method to save storage space? Protobuf uses zigzag encoding for integers, which should be familiar to readers who know protobuf. Let's see how DWARF debug information implements this.
 
-DWARF定义了一种可变长度的整数，称为**Little Endian Base 128**（带符号整数为LEB128或无符号整数为ULEB128），LEB128可以压缩占用的字节来表示整数值，对于小整数值比较多的情况下，无疑会节省存储空间。关于LEB128的内容，可以参考Wiki: https://en.wikipedia.org/wiki/LEB128。
+DWARF defines a variable-length integer called **Little Endian Base 128** (LEB128 for signed integers or ULEB128 for unsigned integers). LEB128 can compress the bytes used to represent integer values, which undoubtedly saves storage space when there are many small integer values. For more information about LEB128, you can refer to Wiki: https://en.wikipedia.org/wiki/LEB128.
 
-#### 压缩DWARF数据（Shrinking DWARF data）
+#### Shrinking DWARF Data
 
-与DWARF v1相比，DWARF新版本使用的编码方案大大减少了调试信息的大小。但不幸的是，编译器生成的调试信息仍然很大，通常大于可执行代码和数据的存储占用。DWARF新版本提供了进一步减少调试数据大小的方法，比如使用zlib数据压缩。
+Compared to DWARF v1, the encoding scheme used in newer DWARF versions has greatly reduced the size of debug information. Unfortunately, the debug information generated by compilers is still large, typically larger than the storage usage of executable code and data. Newer DWARF versions provide methods to further reduce debug data size, such as using zlib data compression.
 
-### 其他debug sections
+### Other Debug Sections
 
-DWARF调试信息根据描述对象的不同，在最终存储的时候也进行了归类、存储到不同的地方。以ELF文件格式为例，DWARF调试信息被存储到了不同的section中，section名称均以前缀'.debug_'开头，例如，.debug_frame包含调用栈信息，.debug_info包含核心DWARF数据（如DIE描述的变量、可执行代码等），.debug_types包含定义的类型，.debug_line包含行号表程序（字节码指令，由行号表状态机执行以生成完整行号表）。
+DWARF debug information is categorized and stored in different places based on the objects being described. Taking the ELF file format as an example, DWARF debug information is stored in different sections, with section names all prefixed with '.debug_'. For example, .debug_frame contains call frame information, .debug_info contains core DWARF data (such as variables and executable code described by DIE), .debug_types contains defined types, and .debug_line contains line number table programs (bytecode instructions executed by the line number table state machine to generate the complete line number table).
 
-由于篇幅原因，难以在一个章节里面覆盖DWARF调试信息标准的所有细节，要知道单单DWARF v4内容就有325 pages。要更加深入细致地了解这部分内容，就需要阅读DWARF调试信息标准了。
+Due to space limitations, it's difficult to cover all the details of the DWARF debug information standard in one chapter. Just the DWARF v4 content alone is 325 pages. To gain a more in-depth and detailed understanding of this content, you'll need to read the DWARF debug information standard.

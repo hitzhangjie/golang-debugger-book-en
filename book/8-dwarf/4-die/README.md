@@ -1,79 +1,80 @@
-## DIE详细介绍
+## Detailed Introduction to DIE
 
-跟其他一些标准需要不断演进一样，DWARF也经历了DWARF v1到DWARF v5的发展阶段。随着DWARF调试信息的完善，以及高级语言进一步抽象、进化，为了更好更高效地对高级语言进行描述，DWARF标准中的Tag枚举值、Attribute枚举值也在慢慢增加。以Tag枚举值为例，DWARF v1中定义了33个Tag枚举值，v2增加到了47个，v3增加到了57个，v4增加到了60个，最新的v5增加到了68个。Attributes当然也存在类似的扩展、数量增加的情况。
+Like other standards that need continuous evolution, DWARF has gone through development stages from DWARF v1 to DWARF v5. As DWARF debugging information has improved and high-level languages have further abstracted and evolved, the Tag and Attribute enumeration values in the DWARF standard have gradually increased to better and more efficiently describe high-level languages. For example, in DWARF v1, 33 Tag enumeration values were defined, v2 increased to 47, v3 to 57, v4 to 60, and the latest v5 to 68. Attributes have also seen similar extensions and increases in number.
 
-但是增加Tags、Attributes不代表DWARF的理解就变得更复杂了，这正是其“良好扩展性”的体现。只是因为篇幅原因，我们先拿DWARF v2中的Tag、Attributes进行展示，让大家有个直观认识后，后面示例中再与当前go编译工具链使用最多的DWARF v4、v5内容进行对齐。以免必要的内容还未介绍到位，大家就已经淹没在了不同版本的细节变迁中。
+However, the increase in Tags and Attributes does not mean that understanding DWARF becomes more complex; this is a reflection of its "good extensibility." Due to space constraints, we will first present the Tags and Attributes from DWARF v2 to give you an intuitive understanding. Later examples will align with the DWARF v4 and v5 content most commonly used by the current Go toolchain, to avoid getting lost in the details of different versions before the necessary content is introduced.
 
-### DIE结构及组织
+### DIE Structure and Organization
 
-DWARF使用一系列调试信息条目（DIE, Debugging Information Entry）来对程序构造进行描述，每个DIE都由一个tag以及一系列attributes构成:
+DWARF uses a series of Debugging Information Entries (DIE) to describe program constructs. Each DIE consists of a tag and a series of attributes:
 
-- tag指明了该DIE描述的程序构造的类型，如编译单元、函数、函数参数及返回值、变量、常量、数据类型等；
-- attributes定义了该DIE的一些具体属性、特征，如变量的名字DW_ATTR_name、变量所属的数据类型DW_ATTR_type等；
+- The tag indicates the type of program construct the DIE describes, such as compilation unit, function, function parameters and return values, variables, constants, data types, etc.;
+- Attributes define specific properties and characteristics of the DIE, such as the variable name (DW_ATTR_name) and the data type to which the variable belongs (DW_ATTR_type).
 
-DIEs之间的关系，可能有兄弟节点（sibling DIEs，由attribute DW_ATTR_type、DW_ATTR_sibling引用），也可能有子节点（Children，如编译单元中包含了一系列函数定义，每个函数定义又包括了入参、出参）。如果进考虑Children关系的话，DIEs构成了一棵树（tree）；如果也把Sibling关系考虑进去的话，就构成了一个图（graph）。
+The relationships between DIEs can include sibling nodes (sibling DIEs, referenced by attributes DW_ATTR_type, DW_ATTR_sibling) and child nodes (Children, such as a compilation unit containing a series of function definitions, each of which includes input and output parameters). If only considering the Children relationship, DIEs form a tree; if also considering the Sibling relationship, they form a graph.
+
 #### DIE Tags
 
-Tag，其枚举值以 `DW_TAG_` 开头，它指明了DIE描述的程序构造所属的类型，下面表格中整理了DWARF v2中定义的Tag枚举值，大部分可以望文生义的方式知道它是描述什么的，但是要详细了解的话，特别是不同Tag类型的DIE可以使用的Attributes，建议阅读DWARF标准进行更深入的了解。
+Tags, whose enumeration values start with `DW_TAG_`, indicate the type of program construct the DIE describes. The table below lists the Tag enumeration values defined in DWARF v2. Most can be understood by their names, but for a detailed understanding, especially the Attributes that can be used by different Tag types of DIEs, it is recommended to read the DWARF standard for deeper insight.
 
 ![img](assets/clip_image001.png)
 
 #### DIE Attributes
 
-Attribute，其枚举值以 `DW_AT_` 开头，它表示了DIE的一些属性、特征信息，进一步补充了DIE要描述的程序构造的信息。
+Attributes, whose enumeration values start with `DW_AT_`, represent some properties and characteristic information of the DIE, further supplementing the information about the program construct the DIE describes.
 
-不同attributes的值类型可能也不同，可以是一个常量（如函数名称）、变量（如函数的开始地址）、对另一个DIE的引用（如函数返回值对应的类型DIE）等等。即使确定了是哪种类型的值，它的编码方式也可能是有差异的，如，常量数据有多种表示形式（如固定为1、2、4、8字节长度的数据，或者可变长度的数据）。
+Different attributes may have different value types, which can be a constant (such as a function name), a variable (such as the start address of a function), a reference to another DIE (such as the type DIE corresponding to a function's return value), etc. Even if the type of value is determined, its encoding method may vary, such as constant data having multiple representation forms (e.g., fixed-length data of 1, 2, 4, or 8 bytes, or variable-length data).
 
->ps: Attribute的任何类型实例的特定表示，都与属性名称一起被编码，以方便更好地理解、解释DIE的含义。
+> Note: The specific representation of any type instance of an Attribute is encoded along with the attribute name to facilitate better understanding and interpretation of the DIE's meaning.
 
-下表列出了DWARF v2中定义的attributes：
+The table below lists the attributes defined in DWARF v2:
 
 ![img](assets/clip_image002.png)
 
-attribute的值，可以划分为如下几种类型：
+The values of attributes can be categorized into the following types:
 
-1. **Address**, 引用被描述程序的地址空间的某个位置；
-2. **Block**, 未被解释的任意数量的字节数据块；
-3. **Constant**, 1、2、4、8字节未被解释的数据，或者以LEB128形式编码的数据；
-4. **Flag**, 指示属性存在与否的小常数；
-5. **lineptr**, 引用存储着行号信息的DWARF section中的某个位置；
-6. **loclistptr**, 引用存储着位置列表的DWARF section中的某个位置，某些对象的内存地址在其生命周期内会发生移动，需要通过位置列表来进行描述；
-7. **macptr**, 引用存储着macro信息的DWARF section中的某个位置；
-8. **rangelistptr**, 引用存储着非相邻地址区间信息的DWARF section中的某个位置；
-9. **Reference**, 引用某个描述program的DIE；
+1. **Address**, referencing a location in the address space of the described program;
+2. **Block**, an uninterpreted arbitrary number of bytes of data;
+3. **Constant**, uninterpreted data of 1, 2, 4, or 8 bytes, or data encoded in LEB128 form;
+4. **Flag**, a small constant indicating the presence or absence of an attribute;
+5. **lineptr**, referencing a location in the DWARF section storing line number information;
+6. **loclistptr**, referencing a location in the DWARF section storing location lists, used to describe objects whose memory addresses may move during their lifecycle;
+7. **macptr**, referencing a location in the DWARF section storing macro information;
+8. **rangelistptr**, referencing a location in the DWARF section storing non-contiguous address range information;
+9. **Reference**, referencing a DIE that describes the program;
 
-   根据被引用DIE所在的编译单元与引用发生的编译单元是否相同，可以划分为两种类型的references：
+   References can be divided into two types based on whether the referenced DIE is in the same compilation unit as the reference:
 
-   - 第一种引用，被引用的DIE所在的编译单元与当前编译单元是同一个，通过相对于该编译单元起始位置的偏移量来引用该DIE；
-   - 第二种引用，被引用的DIE所在的编译单元可以在任意编译单元中，不一定与当前编译单元相同，通过被引用DIE的偏移量来引用该DIE；
-10. **String**, 以'\0'结尾的字符序列，字符串可能会在DIE中直接表示，也可能通过一个独立的字符串表中的偏移量（索引）来引用。
+   - The first type of reference, where the referenced DIE is in the same compilation unit as the current one, references the DIE through an offset relative to the start of the compilation unit;
+   - The second type of reference, where the referenced DIE can be in any compilation unit, not necessarily the same as the current one, references the DIE through the offset of the referenced DIE;
+10. **String**, a sequence of characters ending with '\0', which may be directly represented in the DIE or referenced through an offset (index) in a separate string table.
 
-#### 示例描述
+#### Example Description
 
-下面是一个简单的C程序对应的DIEs数据展示，我们看到最顶层是一个编译单元DIE（表示源文件），它包含了一个Subprogram类型的Child DIE（表示main函数），该Subprogram类型的DIE的返回值描述对应着一个int类型的BaseType类型的DIE。
+Below is a display of DIEs data corresponding to a simple C program. We see that the top level is a compilation unit DIE (representing the source file), which contains a Child DIE of type Subprogram (representing the main function). The return value description of this Subprogram type DIE corresponds to a DIE of type BaseType representing int.
 
 <img alt="dwarf dies" src="./assets/dwarf-dies.png" width="640px" />
 
-### DIE的分类
+### Classification of DIEs
 
-根据描述信息的不同，可以将所有的DIEs划分为两大类：
+Based on the different information they describe, all DIEs can be divided into two major categories:
 
-1. 描述 **数据 和 类型** 的；
-2. 描述 **函数 和 可执行代码** 的；
+1. Those describing **data and types**;
+2. Those describing **functions and executable code**.
 
-一个DIE可以有父、兄弟、孩子DIEs，DWARF调试信息可以被构造成一棵树，树中每个节点都是一个DIE，多个DIE组合在一起共同描述编程语言中具体的一个程序构造（如描述一个函数的定义）。
+A DIE can have parent, sibling, and child DIEs. DWARF debugging information can be constructed as a tree, where each node is a DIE, and multiple DIEs together describe a specific program construct in the programming language (such as describing a function definition).
 
-描述不同类型的程序构造，显然需要不同的Tag类型的DIE，而不同Tag的DIE所使用的Attributes也必然是不同的。想要更好地了解如何对特定语言的程序构造如何进行描述，就需要了解DWARF标准中的推荐做法，以及特定编程语言编译工具链中实际采用的描述方法。
+Describing different types of program constructs obviously requires DIEs of different Tag types, and the Attributes used by DIEs of different Tags are also necessarily different. To better understand how to describe program constructs of a specific language, one needs to understand the recommended practices in the DWARF standard and the actual description methods adopted by the compilation toolchain of the specific programming language.
 
-从学习角度来说，这部分，我们也不需要真的深入go编译工具链的DWARF生成细节，这个比较费时费力，我们只需要写测试代码，然后使用合适的工具观察它具体包含哪些Tag、哪些Attributes就可以了。
+From a learning perspective, we don't need to delve deeply into the DWARF generation details of the Go toolchain, as this is time-consuming and labor-intensive. We only need to write test code and use appropriate tools to observe which Tags and Attributes it contains.
 
-在后面的章节，我们会介绍DIE是如何描述程序中的数据和类型的，然后再介绍是如何描述函数和可执行代码的。
+In the following chapters, we will introduce how DIEs describe data and types in programs, and then how they describe functions and executable code.
 
-### DIE的存储位置
+### Storage Location of DIEs
 
-调试信息条目存储在.debug_info中，DIE可以描述类型、变量、函数、编译单元等等不同的程序构造。DWARF v4中曾经提出将类型相关的描述存储在.debug_types中，初衷是为了避免不同编译单元中存在重复的类型定义，导致linker合并存储到.debug_info时出现重复的DIE信息，解法是每个类型写入独立的section，然后由linker合并、去重后写入.debug_types。即使不写入.debug_types，这也是可以做到的，DWARF v5中已经将类型相关的描述合并入.debug_info，废弃了.debug_types。
+Debugging information entries are stored in .debug_info. DIEs can describe different program constructs such as types, variables, functions, compilation units, etc. In DWARF v4, it was proposed to store type-related descriptions in .debug_types, with the original intention of avoiding duplicate type definitions in different compilation units, which would lead to duplicate DIE information when the linker merges and stores them in .debug_info. The solution is to write each type into an independent section, which is then merged and deduplicated by the linker and written to .debug_types. Even if not written to .debug_types, this can be achieved. In DWARF v5, type-related descriptions have been merged into .debug_info, and .debug_types has been deprecated.
 
-see: DWARFv5 Page8:
+See: DWARFv5 Page8:
 
 ```
 1.4 Changes from Version 4 to Version 5
@@ -85,23 +86,23 @@ The following is a list of the major changes made to the DWARF Debugging
    ...
 ```
 
-调试信息数据其实是比较大的，如果不经过压缩处理会导致二进制尺寸显著增加。一般会要求编译工具链生成调试信息时进行压缩处理，压缩后的调试信息将存储在：1）目标文件中的".zdebug_"前缀的section中，如未压缩的调试信息条目对应section是.debug_info，那么压缩后将存储在.zdebug_info中；2）也可能仍然存储在".debug_"前缀的section中，但是对应的section的Compressed标记设置为true，并且设置对应的压缩算法，如zlib或者zstd。3）此外，也有些平台上，工具链会将上述调试信息存储在独立的文件或者目录中，如macOS上会写入到对应的 `.dSYM/*` 文件夹中，调试器读取时需要注意这点。
+Debugging information data is actually quite large, and if not compressed, it can significantly increase the binary size. Generally, the compilation toolchain is required to compress the debugging information when generating it. The compressed debugging information will be stored in: 1) sections with the ".zdebug_" prefix in the target file, such as .zdebug_info for compressed debugging information entries; 2) it may also still be stored in sections with the ".debug_" prefix, but with the Compressed flag set to true and the corresponding compression algorithm set, such as zlib or zstd. 3) Additionally, on some platforms, the toolchain may store the above debugging information in separate files or directories, such as writing to the corresponding `.dSYM/*` folder on macOS, which debuggers need to be aware of when reading.
 
-### 从入门到精通
+### From Beginner to Expert
 
-看到作者提到DWARF已经经历了这么多个版本，并且每个新版本较之旧版本都在不断扩展，大家心里难免有些抓毛，“我能掌握吗？”。
+Seeing that the author mentions DWARF has gone through so many versions, and each new version is constantly expanding compared to the old one, you might feel a bit overwhelmed, "Can I master it?"
 
-1）大家觉得理解 **“反射（reflection）**”困难吗？反射和这里的DWARF其实有异曲同工之妙。借助反射我们可以在程序运行时，动态理解对象的类型信息，有了类型信息我们也可以动态构建对象、修改对象属性信息。反射技术中使用到的类型信息就是程序运行时的对象的一些跟类型相关的元数据信息，这里的元数据信息的设计和组织面向这一种语言专属的设计。
+1) Do you find understanding **"reflection"** difficult? Reflection and DWARF here actually have a similar essence. With reflection, we can dynamically understand the type information of objects at runtime, and with type information, we can also dynamically construct objects and modify object property information. The type information used in reflection technology is some metadata information related to the type of objects at runtime, and the design and organization of this metadata information are specific to a particular language.
 
-2）大家觉得理解go runtime的 **.gopclntab** 困难吗？可能大家没有看过相关的实现细节，尽管我们多次提到了go runtime依赖它实现了运行时的调用栈跟踪。这里的.gopclntab也是针对go语言专属的设计。
+2) Do you find understanding the **.gopclntab** of the Go runtime difficult? You may not have seen the related implementation details, although we have mentioned multiple times that the Go runtime relies on it to implement runtime call stack tracing. The .gopclntab here is also a design specific to the Go language.
 
-相比较之下，而DWARF则是面向当前甚至将来所有的高级语言设计的一种描述语言，它也描述了程序的类型定义、对象的类型信息，借助它我们也可以知道内存中某个对象的类型信息，也可以据此构造对象、修改对象，只要我们愿意。行号表、调用栈信息表，也需要针对所有高级语言进行描述，而不能仅仅面向一种语言。当然了，DWARF是面向调试领域的，所以它生成的内容不会在程序执行时加载到内存。
+In contrast, DWARF is a descriptive language designed for all current and future high-level languages. It also describes type definitions and type information of objects. With it, we can know the type information of an object in memory, and we can also construct and modify objects if we wish. Line number tables and call stack information tables also need to be described for all high-level languages, not just for one language. Of course, DWARF is oriented towards the debugging domain, so its generated content will not be loaded into memory during program execution.
 
-所以，我这么给大家类比一下之后，大家觉得还困难吗？大道至简，道理是相通的，能够不拘泥于形式的灵活运用来解决问题，是我们应该向大师们学习的。
+So, after this analogy, do you still find it difficult? The great way is simple, and the principles are相通. Being able to flexibly apply them to solve problems without being bound by form is what we should learn from the masters.
 
-> ps: 为了方便大家学习，我编写了一个DIE可视化工具 [hitzhangjie/dwarfviewer](https://github.com/hitzhangjie/dwarfviewer)。借助此工具，您可以方便地查看ELF文件.debug_info中的DIE信息，包括DIE Tag、Attributes以及Children DIEs、Sibling DIEs。您可以写些简单的代码片段，如包含一个函数，或者一个类型，然后使用此工具对生成的DWARF信息进行对比，以加深理解。
+> Note: To facilitate your learning, I have written a DIE visualization tool [hitzhangjie/dwarfviewer](https://github.com/hitzhangjie/dwarfviewer). With this tool, you can easily view the DIE information in the .debug_info of an ELF file, including DIE Tags, Attributes, and Children DIEs, Sibling DIEs. You can write some simple code snippets, such as containing a function or a type, and then use this tool to compare the generated DWARF information to deepen your understanding.
 
-### 参考文献
+### References
 
 1. DWARF, https://en.wikipedia.org/wiki/DWARF
 2. DWARFv1, https://dwarfstd.org/doc/dwarf_1_1_0.pdf
