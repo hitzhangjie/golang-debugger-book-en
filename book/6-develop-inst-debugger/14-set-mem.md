@@ -1,18 +1,18 @@
-## 修改进程状态(内存)
+## Modifying Process State (Memory)
 
-### 实现目标: 修改内存数据
+### Implementation Goal: Modifying Memory Data
 
-添加、移除断点过程中其实也是对内存数据做修改，只不过断点操作是修改的指令数据，而我们这里强调的是对数据做修改。指令级调试器对内存数据做修改，其实没有符号级调试器直接通过变量名来修改容易，对调试人员的要求比较高。因为如果不知道什么数据在内存什么位置，是什么类型，占多少字节，所以不好修改。符号级调试器就简单多了，直接通过变量名来修改就可以。
+During the process of adding and removing breakpoints, we are actually modifying memory data, but the breakpoint operation modifies instruction data. Here, we emphasize modifying data. Modifying memory data in an instruction-level debugger is not as easy as in a symbol-level debugger, which can modify directly through variable names. The requirements for the debugger are higher because if one does not know what data is at what location in memory, what type it is, and how many bytes it occupies, it is difficult to modify. Symbol-level debuggers are much simpler, as they can modify directly through variable names.
 
-本节我们还是要演示下对内存数据区数据做修改的操作，介绍下大致的交互，以及用到的系统调用 `ptrace(PTRACE_POKEDATA,...)` ，为我们后续符号级调试器里通过变量名来修改值也提前做个技术准备。严格来说我们应该提供一个通用的修改内存的调试命令 `set <addr> <value>` 。OK，我们先还是先介绍如何修改任意指定地址处的内存数据，然后会在 godbg 中实现此功能。
+In this section, we will demonstrate how to modify data in the memory data area, introduce the general interaction, and use the system call `ptrace(PTRACE_POKEDATA,...)`. This will also serve as a technical preparation for modifying values through variable names in our future symbol-level debugger. Strictly speaking, we should provide a general debugging command to modify memory: `set <addr> <value>`. OK, let's first introduce how to modify memory data at any specified address, and then implement this functionality in `godbg`.
 
-### 代码实现
+### Code Implementation
 
-我们实现一个程序，该程序会跟踪被调试进程，然后会提示输入变量的地址和新变量值，然后我们将变量地址处的内存数据修改为新变量值。
+We will implement a program that tracks the debugged process, prompts for the address of a variable and its new value, and then modifies the memory data at that address to the new value.
 
-那如何确定这个变量的地址呢？我们会实现一个go程序，编译构建启动后，我们会先用dlv这个符号级调试器来跟踪它，然后确定它的变量地址后，再detach，然后再交给我们这里的程序来attach被调试进程，就可以输入准确的变量地址、新变量值进行测试了。
+How do we determine the address of this variable? We will implement a Go program, compile and start it, then use the symbol-level debugger `dlv` to track it, determine its variable address, detach, and then hand it over to our program to attach to the debugged process. This way, we can input the exact variable address and new value for testing.
 
-OK，我们看下这里的程序的实现。
+OK, let's look at the implementation of the program here.
 
 ```go
 package main
@@ -152,13 +152,13 @@ func checkPid(pid int) bool {
 }
 ```
 
-### 代码测试
+### Code Testing
 
-下面来说明下这里的测试方法，为了方便测试我们需要先准备一个测试程序，方便我们好获取某个变量的地址，然后我们修改这个变量的值，通过程序执行效果来印证修改是否生效。
+Below is the testing method. For convenience, we need to prepare a test program to easily obtain the address of a variable, then modify its value, and verify the modification through the program's execution effect.
 
-1、首先我们准备了一个测试程序 testdata/loop.go
+1. First, we prepared a test program `testdata/loop.go`.
 
-   这个程序通过一个for循环每隔1s打印当前进程的pid，循环控制变量loop默认为true。
+   This program prints the current process's pid every 1 second through a for loop, with the loop control variable `loop` defaulting to true.
 
 ```go
    package main
@@ -178,7 +178,7 @@ func checkPid(pid int) bool {
    }
 ```
 
-2、我们先构建并运行这个程序，注意为了变量被优化掉我们构建时需要禁用优化：`go build -gcflags 'all=-N -l'`
+2. We first build and run this program, noting that to prevent the variable from being optimized away, we need to disable optimization during the build: `go build -gcflags 'all=-N -l'`
 
 ```bash
    $ cd../testdata && make
@@ -191,7 +191,7 @@ func checkPid(pid int) bool {
    ...
 ```
 
-3、然后我们借助dlv来观察变量loop的内存位置
+3. Then we use `dlv` to observe the memory location of the variable `loop`.
 
 ```bash
    $dlvattach49701
@@ -217,14 +217,14 @@ func checkPid(pid int) bool {
     ...
     ```
 
-3、然后我们让dlv进程退出恢复loop的执行
+3. Then we let the `dlv` process exit to resume the execution of `loop`.
 
    ```bash
    (dlv) quit
    Would you like to kill the process? [Y/n] n
 ```
 
-4、然后我们执行自己的程序
+4. Then we execute our program.
 
 ```bash
    $ ./14_set_mem 49701
@@ -247,7 +247,7 @@ func checkPid(pid int) bool {
     change data from 1 to 0 succ
 ```
 
-   此时，由于 `loop=false` 所以 `for loop {...}` 循环结束，程序会执行到结束。
+   At this point, because `loop=false`, the `for loop {...}` loop ends, and the program will execute to completion.
 
 ```bash
     pid:49701
@@ -256,8 +256,8 @@ func checkPid(pid int) bool {
     zhangjie🦀testdata(master) $
 ```
 
-### 本文小结
+### Summary
 
-本文我们实现了指令级调试器修改任意内存地址处的数据的功能，这个功能非常重要，我们都知道修改内存数据对于调试修改程序执行行为的重要性。了解了这里的实现技术后，我们将在实现符号级调试时继续实现对变量值的修改，对于实用高级语言进行开发的开发者来说，调整变量值是一个非常重要的观察程序执行行为的功能。
+In this section, we implemented the functionality to modify data at any memory address in an instruction-level debugger. This is a very important feature, as we know how crucial it is to modify memory data when debugging and changing program execution behavior. After understanding the implementation techniques here, we will continue to implement variable value modification when implementing symbol-level debugging. For developers working with high-level languages, the ability to adjust variable values is a very important feature for observing program execution behavior.
 
-下一节我们将继续查看下如何修改寄存器的值，这在某些调试场景下也是很重要的。
+In the next section, we will look at how to modify register values, which is also important in certain debugging scenarios.

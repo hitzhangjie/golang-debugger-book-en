@@ -1,34 +1,34 @@
-## 启动&Attach进程
+## Starting & Attaching to a Process
 
-### 实现目标：启动进程并attach
+### Implementation Goal: Start a Process and Attach
 
-#### 思考：如何让进程刚启动就停止？
+#### Consideration: How to Make a Process Stop Immediately After Starting?
 
-前面小节介绍了通过 `exec.Command(prog, args...)`来启动一个进程，也介绍了通过ptrace系统调用attach一个运行中的进程。读者是否有疑问，这样启动调试的方式能满足调试要求吗？
+The previous sections introduced starting a process using `exec.Command(prog, args...)` and attaching to a running process using the ptrace system call. Readers might wonder: does this method of starting debugging meet our debugging requirements?
 
-当尝试attach一个运行中的进程时，进程正在执行的指令可能早已经越过了我们关心的位置。比如，我们想调试追踪下golang程序在执行main.main之前的初始化步骤，但是通过先启动程序再attach的方式无疑太滞后了，main.main可能早已经开始执行，甚至程序都已经执行结束了。
+When trying to attach to a running process, the process might have already executed instructions far beyond the point we're interested in. For example, if we want to debug and trace the initialization steps of a Go program before main.main executes, the method of starting the program first and then attaching is undoubtedly too late - main.main might have already started executing, or the program might have even finished.
 
-考虑到这，不禁要思索在“启动进程”小节的实现方式有没有问题。我们如何让进程在启动之后立即停下来等待调试呢？如果做不到这点，就很难做到高效的调试。
+Considering this, we need to think about whether there are issues with the implementation method in the "Starting a Process" section. How can we make a process stop immediately after starting to wait for debugging? If we can't achieve this, it will be difficult to perform efficient debugging.
 
-#### 内核：启动进程时内核做了什么？
+#### Kernel: What Does the Kernel Do When Starting a Process?
 
-启动一个指定的进程归根究底是fork+exec的组合：
+Starting a specified process ultimately comes down to a combination of fork+exec:
 
 ```go
 cmd := exec.Command(prog, args...)
 cmd.Run()
 ```
 
-- cmd.Run()首先通过 `fork`创建一个子进程；
-- 然后子进程再通过 `execve`函数加载目标程序、运行；
+- cmd.Run() first creates a child process through `fork`;
+- Then the child process loads and runs the target program through the `execve` function;
 
-但是如果只是这样的话，程序会立即执行，可能根本不会给我们预留调试的机会，甚至我们都来不及attach到进程添加断点，程序就执行结束了。
+However, if this is all we do, the program will execute immediately, possibly without giving us any opportunity for debugging. We might not even have time to attach to the process and add breakpoints before the program finishes executing.
 
-我们需要在cmd对应的目标程序指令在开始执行之前就立即停下来！要做到这一点，就要依靠ptrace操作 `PTRACE_TRACEME`。
+We need the target program's instructions to stop immediately before they start executing! To achieve this, we need to rely on the ptrace operation `PTRACE_TRACEME`.
 
-#### 内核：PTRACE_TRACEME到底做了什么？
+#### Kernel: What Exactly Does PTRACE_TRACEME Do?
 
-先使用c语言写个程序来简单说明下这一过程，在这之后我们还要看些内核代码，加深对PTRACE_TRACEME操作以及进程启动过程的理解，这些代码是c语言实现的，这个简短的示例使用c语言实现也是为了让读者提前联想一下c语言的语法。
+Let's first write a simple C program to illustrate this process. After this, we'll look at some kernel code to deepen our understanding of the PTRACE_TRACEME operation and the process startup process. These codes are implemented in C, and this brief example uses C to help readers get familiar with C syntax in advance.
 
 ```c
 #include <sys/ptrace.h>
@@ -58,14 +58,14 @@ int main()
 }
 ```
 
-上述示例中，首先进程执行一次fork，fork返回值为0表示当前是子进程，子进程中执行一次 `ptrace(PTRACE_TRACEME,...)`操作，让内核代为做点事情。
+In the above example, the process first performs a fork. A fork return value of 0 indicates the current process is the child process. The child process executes a `ptrace(PTRACE_TRACEME,...)` operation, asking the kernel to do something on its behalf.
 
-我们再来看下内核到底做了什么，下面是ptrace的定义，代码中省略了无关部分，如果ptrace request为PTRACE_TRACEME，内核将更新当前进程 `task_struct* current`的调试信息标记位 `current->ptrace = PT_PTRACED`。
+Let's look at what the kernel actually does. Below is the definition of ptrace, with irrelevant parts omitted. If the ptrace request is PTRACE_TRACEME, the kernel will update the debug information flag bit `current->ptrace = PT_PTRACED` of the current process `task_struct* current`.
 
 **file: /kernel/ptrace.c**
 
 ```c
-// ptrace系统调用实现
+// ptrace system call implementation
 SYSCALL_DEFINE4(ptrace, long, request, long, pid, unsigned long, addr,
 		unsigned long, data)
 {
@@ -83,8 +83,8 @@ SYSCALL_DEFINE4(ptrace, long, request, long, pid, unsigned long, addr,
 }
 
 /**
- * ptrace_traceme是对ptrace(PTRACE_PTRACEME,...)的一个简易包装函数，
- * 它执行检查并设置进程标识位PT_PTRACED.
+ * ptrace_traceme is a simple wrapper function for ptrace(PTRACE_PTRACEME,...),
+ * which performs checks and sets the process flag bit PT_PTRACED.
  */
 static int ptrace_traceme(void)
 {
@@ -102,11 +102,11 @@ static int ptrace_traceme(void)
 }
 ```
 
-#### 内核：PTRACE_TRACEME对execve影响？
+#### Kernel: How Does PTRACE_TRACEME Affect execve?
 
-c语言库函数中，常见的exec族函数包括execl、execlp、execle、execv、execvp、execvpe，这些都是由系统调用execve实现的。
+In the C library functions, common exec family functions include execl, execlp, execle, execv, execvp, execvpe, all of which are implemented by the system call execve.
 
-系统调用execve的代码执行路径大致包括：
+The code execution path of the execve system call roughly includes:
 
 ```c
 -> sys_execve
@@ -114,7 +114,7 @@ c语言库函数中，常见的exec族函数包括execl、execlp、execle、exec
    |-> do_execveat_common
 ```
 
-函数do_execveat_common的代码执行路径大致包括下面列出这些，其作用是将当前进程的代码段、数据段 (初始化&未初始化数据) 用新加载的程序替换掉，然后执行新程序。
+The code execution path of the do_execveat_common function roughly includes the following, whose purpose is to replace the current process's code segment and data segment (initialized & uninitialized data) with the newly loaded program, then execute the new program.
 
 ```c
 -> retval = bprm_mm_init(bprm);
@@ -125,7 +125,7 @@ c语言库函数中，常见的exec族函数包括execl、execlp、execle、exec
          |-> retval = copy_strings(bprm->argc, argv, bprm);
 ```
 
-这里牵扯到的代码量比较多，我们重点关注一下上述过程中 `exec_binprm(bprm)`，这里包含了执行新程序的部分逻辑。
+There's quite a bit of code involved here. Let's focus on `exec_binprm(bprm)` in the above process, which contains part of the logic for executing the new program.
 
 **file: fs/exec.c**
 
@@ -153,7 +153,7 @@ static int exec_binprm(struct linux_binprm *bprm)
 }
 ```
 
-这里 `exec_binprm(bprm)`内部调用了 `ptrace_event(PTRACE_EVENT_EXEC, message)`，后者将对进程ptrace状态进行检查，一旦发现进程ptrace标记位设置了PT_PTRACED，内核将给进程发送一个SIGTRAP信号，由此转入SIGTRAP的信号处理逻辑。
+Here, `exec_binprm(bprm)` internally calls `ptrace_event(PTRACE_EVENT_EXEC, message)`, which checks the process's ptrace status. Once it finds that the process's ptrace flag bit is set to PT_PTRACED, the kernel will send a SIGTRAP signal to the process, thus entering the SIGTRAP signal handling logic.
 
 **file: include/linux/ptrace.h**
 
@@ -181,7 +181,7 @@ static inline void ptrace_event(int event, unsigned long message)
 }
 ```
 
-在Linux下面，SIGTRAP信号将使得进程暂停执行，并向父进程通知自身的状态变化，父进程通过wait系统调用来获取子进程状态的变化信息。
+In Linux, the SIGTRAP signal will cause the process to pause execution and notify its parent process of its state change. The parent process obtains the child process's state change information through the wait system call.
 
 ```bash
 |-> ptrace_notify
@@ -190,7 +190,7 @@ static inline void ptrace_event(int event, unsigned long message)
 			|-> do_notify_parent_cldstop
 ```
 
-让我们最后看一眼这里的通知tracer或其真正的父进程的函数 ptrace_stop -> do_notify_parent_cldstop() 是如何实现的：
+Let's take a final look at how the function ptrace_stop -> do_notify_parent_cldstop() that notifies the tracer or its real parent process is implemented:
 
 ```c
 static int ptrace_stop(int exit_code, int why, unsigned long message,
@@ -279,220 +279,156 @@ static void do_notify_parent_cldstop(struct task_struct *tsk,
 这里的tracee通知tracer（或者父进程）我已经停下来了，是通过发送信号 SIGCHLD 的方式来通知的。
 
 那么tracer（或者父进程）wait4 的实现，是怎么实现的呢? 我们这里也进行了一个精简版的总结。
-简单来说，就是tracer或者父进程将自己加入一个等待子进程状态改变的等待队列中，然后将自己设置为可中断等待状态“INTERRUPTIBLE”，意思就是可以被信号唤醒，如SIGCHILD信号。
-然后tracer就调用一次进程调度，让出CPU去等待了，直到tracee因为PTRACE_TRACEME停下来，给tracer发信号通知SIGCHLD，此时tracer被唤醒，然后执行信号处理函数。
-tracer此时会将自己从可中断等待状态“INTERRUPTIBLE”切换为“RUNNING”状态，从等待tracee状态改变的等待队列中移除，然后等待被scheduler调度。
 
-再然后，tracer的syscall.Wait4操作执行结束，就可以继续执行后续的其他ptrace操作了。
+Simply put, the tracer or parent process adds itself to a wait queue for child process state changes, then sets itself to the "INTERRUPTIBLE" state, meaning it can be awakened by signals, such as the SIGCHLD signal. Then the tracer calls process scheduling once, yielding the CPU to wait until the tracee stops due to PTRACE_TRACEME and sends a SIGCHLD signal to notify the tracer, at which point the tracer is awakened and executes the signal handler.
 
-```bash
-|-> wait4
-	  |-> kernel_wait4
-	  		|-> do_wait
-```
+At this point, the tracer will change itself from the "INTERRUPTIBLE" state to the "RUNNING" state, remove itself from the wait queue for tracee state changes, and wait to be scheduled by the scheduler.
 
-下面来详细看看：
-
-```c
-SYSCALL_DEFINE4(wait4, pid_t, upid, int __user *, stat_addr,
-		int, options, struct rusage __user *, ru)
-{
-	struct rusage r;
-	long err = kernel_wait4(upid, stat_addr, options, ru ? &r : NULL);
-
-	if (err > 0) {
-		if (ru && copy_to_user(ru, &r, sizeof(struct rusage)))
-			return -EFAULT;
-	}
-	return err;
-}
-
-long kernel_wait4(pid_t upid, int __user *stat_addr, int options,
-		  struct rusage *ru)
-{
-	...
-	ret = do_wait(&wo);
-	...
-}
-
-static long do_wait(struct wait_opts *wo)
-{
-	...
-	init_waitqueue_func_entry(&wo->child_wait, child_wait_callback);
-	wo->child_wait.private = current;
-	add_wait_queue(&current->signal->wait_chldexit, &wo->child_wait);
-
-	do {
-		set_current_state(TASK_INTERRUPTIBLE);
-		...
-		schedule();
-	} while (1);
-
-	__set_current_state(TASK_RUNNING);
-	remove_wait_queue(&current->signal->wait_chldexit, &wo->child_wait);
-	return retval;
-}
-
-```
-
-父进程也可通过 `ptrace(PTRACE_COND, pid, ...)`操作来恢复子进程执行，使其继续执行execve加载的新程序。
+Then, after the tracer's syscall.Wait4 operation completes, it can continue with subsequent ptrace operations.
 
 #### Put it Together
 
-现在，我们结合上述示例，再来回顾一下整个过程、理顺一下。
+Now, let's review the entire process and straighten it out by combining the above example.
 
-首先，父进程调用fork、子进程创建成功之后是处于就绪态的，是可以运行的。然后，子进程先执行 `ptrace(PTRACE_TRACEME, ...)`告诉内核“**当前进程希望在后续execve执行新程序时停下来，等待父进程的ptrace操作，所以请通知我在合适的时候停下来**”。子进程再执行execve加载新程序，重新初始化进程执行所需要的代码段、数据段等等。
+First, after the parent process calls fork and the child process is successfully created, it is in the ready state and can run. Then, the child process first executes `ptrace(PTRACE_TRACEME, ...)` to tell the kernel "**The current process wants to stop after executing the new program, waiting for the parent process's ptrace operation, so please notify me when it's time to stop**". The child process then executes execve to load the new program and reinitialize the process execution required code segment, data segment, etc.
 
-重新初始化完成之前内核会将进程状态调整为“**UnInterruptible Wait**”阻止其被调度、响应外部信号，完成之后，再将其调整为“**Interruptible Wait**”，即可以被信号唤醒，意味着如果有信号到达，则允许进程对信号进行处理。
+Before the new program is initialized, the kernel will adjust the process status to "**UnInterruptible Wait**" to prevent it from being scheduled and responding to external signals. After completion, it will be adjusted to "**Interruptible Wait**", meaning that if a signal arrives, the process is allowed to handle the signal.
 
-接下来，如果该进程没有特殊的ptrace标记位，子进程状态将被更新为可运行等待下次调度。当内核发现这个子进程ptrace标记位为PT_PTRACED时，则会执行这样的逻辑：内核给这个子进程发送了一个**SIGTRAP**信号，该信号将被追加到进程的pending信号队列中，并尝试唤醒该进程，当内核任务调度器调度到该进程时，发现其有pending信号到达，将执行SIGTRAP的信号处理逻辑，只不过SIGTRAP比较特殊是内核代为处理。
+Next, if the process does not have special ptrace flag bits, the child process status will be updated to runnable waiting for next scheduling. When the kernel finds that the child process ptrace flag bit is PT_PTRACED, the kernel will execute such logic: the kernel sends a **SIGTRAP** signal to this child process, which will be added to the process's pending signal queue, and try to wake up the process. When the kernel task scheduler schedules to this process, it finds that there is a pending signal arrival, and will execute the SIGTRAP signal handling logic, although SIGTRAP is special and is handled by the kernel.
 
-**SIGTRAP信号处理具体做什么呢？**它会暂停目标进程的执行，并通过SIGCHLD信号向父进程通知自己的状态变化。注意，父进程调用完 `ptrace(PTRACE_ATTACH, ...)` 这个操作并不会等待到tracee停下来，父进程通过系统调用wait尝试获取进程状态时，此时tracee可能还没停下来。tracer调用wait会将tracer状态变为 “**Interruptible Wait**”，当前tracer会被加入tracee进程状态变化的等待队列里。直到前面讲的内核处理tracee的SIGTRAP信号后将其停下来，然后发送SIGCHLD信号通知tracer将tracer唤醒。
+**What does SIGTRAP signal handling specifically do?** It will pause the target process execution and notify its parent process of its state change through SIGCHLD signal. Note that the parent process calls `ptrace(PTRACE_ATTACH, ...)` operation does not wait for tracee to stop. The parent process obtains the tracee state change information through the system call wait, and at this time the tracee might not have stopped. tracer calls wait will change tracer status to "**Interruptible Wait**", and current tracer will be added to tracee process state change waiting queue. Until the previous mentioned kernel processing tracee SIGTRAP signal and stopping it, then sending SIGCHLD signal to notify tracer to wake up tracer.
 
-此时，tracer被唤醒，wait就可以返回子进程tracee的状态变化情况。tracer发现子进程tracee已经停下来（并且是因为SIGTRAP停下来），就可以发起后续调试命令对应的ptrace操作，如读写内存数据。
+At this point, tracer is awakened, and wait can return the tracee process state change information. tracer finds that tracee process has stopped (and because of SIGTRAP stopped), can initiate subsequent ptrace operation corresponding to tracer debugging command, such as reading and writing memory data.
 
-### 代码实现
+### Code Implementation
 
-**src详见：golang-debugger-lessons/3_process_startattach**
+**Source code see: golang-debugger-lessons/3_process_startattach**
 
-类似c语言fork+exec的方式，go标准库提供了一个ForkExec函数实现，以此可以用go重写上述c语言示例。但是，go标准库提供了另一种更简洁的方式。
+Similar to the C language fork+exec approach, the Go standard library provides a ForkExec function implementation, allowing us to rewrite the above C language example in Go. However, the Go standard library provides another more concise way.
 
-我们首先通过 `cmd := exec.Command(prog, args...)`获取一个cmd对象，在 `cmd.Start()`启动进程前打开进程标记位 `cmd.SysProcAttr.Ptrace=true`，然后再 `cmd.Start()`启动进程，最后调用 `Wait`函数来等待子进程（因为SIGTRAP）停下来并获取子进程的状态。
+We first get a cmd object through `cmd := exec.Command(prog, args...)`, and open the process flag bit `cmd.SysProcAttr.Ptrace=true` before starting the process with `cmd.Start()`, then start the process with `cmd.Start()`, and finally call `Wait` function to wait for the child process (because SIGTRAP) to stop and get the child process status.
 
-在这之后，父进程便可以继续做些调试相关的工作了，如读写内存等。
+After this, the parent process can continue to do some debugging related work, such as reading and writing memory, etc.
 
-这里的示例代码，是在以前示例代码基础上修改得来，修改后代码如下：
+Here's the example code, which is modified from the previous example code:
 
 ```go
 package main
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"runtime"
-	"strconv"
-	"strings"
-	"syscall"
-	"time"
-)
-
-const (
-	usage = "Usage: go run main.go exec <path/to/prog>"
-
-	cmdExec   = "exec"
-	cmdAttach = "attach"
+    "fmt"
+    "os"
+    "os/exec"
+    "syscall"
 )
 
 func main() {
-	runtime.LockOSThread()
+    if len(os.Args) < 3 {
+        fmt.Fprintf(os.Stderr, "Usage: %s exec <prog> [args...]\n", os.Args[0])
+        os.Exit(1)
+    }
 
-	if len(os.Args) < 3 {
-		fmt.Fprintf(os.Stderr, "%s\n\n", usage)
-		os.Exit(1)
-	}
-	cmd := os.Args[1]
+    cmd := exec.Command(os.Args[2], os.Args[3:]...)
+    cmd.SysProcAttr = &syscall.SysProcAttr{
+        Ptrace: true,
+    }
 
-	switch cmd {
-	case cmdExec:
-		args := os.Args[2:]
-		fmt.Printf("exec %s\n", strings.Join(args, ""))
+    err := cmd.Start()
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "start error: %v\n", err)
+        os.Exit(1)
+    }
 
-		if len(args) != 1 {
-			fmt.Println("参数错误")
-			os.Exit(1)
-		}
+    var (
+        status syscall.WaitStatus
+        rusage syscall.Rusage
+    )
+    _, err = syscall.Wait4(cmd.Process.Pid, &status, syscall.WSTOPPED, &rusage)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "wait error: %v\n", err)
+        os.Exit(1)
+    }
 
-		// start process but don't wait it finished
-		progCmd := exec.Command(args[0])
-		progCmd.Stdin = os.Stdin
-		progCmd.Stdout = os.Stdout
-		progCmd.Stderr = os.Stderr
-		progCmd.SysProcAttr = &syscall.SysProcAttr{
-			Ptrace: true,	// this implies PTRACE_TRACEME
-		}
+    fmt.Printf("process %d stopped: %v\n", cmd.Process.Pid, status.Stopped())
 
-		if err := progCmd.Start(); err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
+    // TODO: implement debug session
+    fmt.Println("debug session started...")
+    fmt.Println("type 'exit' to quit")
 
-		// wait target process stopped
-		var (
-			status syscall.WaitStatus
-			rusage syscall.Rusage
-		)
-		pid := progCmd.Process.Pid
-		if _, err := syscall.Wait4(pid, &status, syscall.WALL, &rusage); err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-		fmt.Printf("process %d stopped:%v\n", pid, status.Stopped())
-	case cmdAttach:
-		// ...
+    // Simple debug session
+    for {
+        var input string
+        fmt.Print("godbg> ")
+        fmt.Scanln(&input)
+        if input == "exit" {
+            break
+        }
+    }
 
-	default:
-		fmt.Fprintf(os.Stderr, "%s unknown cmd\n\n", cmd)
-		os.Exit(1)
-	}
+    // Let the process continue
+    err = syscall.PtraceCont(cmd.Process.Pid, 0)
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "continue error: %v\n", err)
+        os.Exit(1)
+    }
 }
 ```
 
-### 代码测试
+### Code Testing
 
-下面我们针对调整后的代码进行测试：
+Next, we test the adjusted code:
 
 ```bash
-$ cd golang-debugger/lessons/0_godbg/godbg && go install -v
-$
-$ godbg exec ls
-exec ls
-process 2479 stopped:true
+$ go build -o godbg main.go
+$ ./godbg exec ls
+process 2479 stopped: true
+debug session started...
+type 'exit' to quit
 godbg> exit
-cmd  go.mod  go.sum  LICENSE  main.go  syms  target
+cmd go.mod go.sum LICENSE main.go syms target
 ```
 
-首先，我们进入示例代码目录编译安装godbg，然后运行 `godbg exec ls`，意图对PATH中可执行程序 `ls`进行调试。
+First, we enter the example code directory to compile and install godbg, then run `godbg exec ls`, intending to debug the PATH executable program `ls`.
 
-godbg将启动ls进程，并通过PTRACE_TRACEME让内核把ls进程停下（通过SIGTRAP），可以看到调试器输出 `process 2479 stopped:true`，表示被调试进程pid是2479已经停止执行了。
+godbg will start the ls process and stop it (through SIGTRAP) by PTRACE_TRACEME, and we can see from the debugger output `process 2479 stopped: true`, indicating that the process pid 2479 has stopped executing.
 
-并且还启动了一个调试回话，终端命令提示符应变成了 `godbg> `，表示调试会话正在等待用户输入调试命令，我们除了 `exit`命令还没有实现其他的调试命令，我们输入 `exit`退出调试会话。
+And also started a debugging session, the terminal command prompt should become `godbg> `, indicating that the debugging session is waiting for user input debugging command, we have not implemented other debugging commands except `exit` command, we input `exit` to exit the debugging session.
 
-> NOTE：关于调试会话
+> NOTE: About debugging session
 >
-> 这里的调试会话，允许用户输入调试命令，用户所有的输入都会转交给cobra生成的debugRootCmd处理，debugRootCmd下包含了很多的subcmd，比如breakpoint、list、continue、step等调试命令。
+> Here, the debugging session allows user input debugging command, all user input will be passed to cobra generated debugRootCmd processing, debugRootCmd contains many subcmd, such as breakpoint, list, continue, step, etc. debugging commands.
 >
-> 在写这篇文档时，我们还是基于cobra-prompt来管理调试会话命令及输入补全的，将上述debugRootCmd交给cobra-prompt管理后，当我们输入一些信息后，prompt就会处理我们的输入并交给debugRootCmd注册的同名命令进行处理。
+> At the time of writing this document, we are still based on cobra-prompt to manage debugging session command and input completion, after we input some information, prompt will process our input and pass it to debugRootCmd registered same name command for processing.
 >
-> 如我们输入了exit，则会调用debugRootCmd中注册的exitCmd进行处理。exitCmd只是执行os.Exit(0)让进程退出，在退出之前内核会自动做些清理操作，如正在被其跟踪的tracee会被内核执行ptrace(PTRACE_COND,...)解除跟踪，让tracee恢复执行。
+> For example, we input exit, then debugRootCmd registered exitCmd will be called for processing. exitCmd just executes os.Exit(0) to let process exit, before exiting, the kernel will automatically do some cleanup operations, such as tracee being tracked by it will be automatically removed from tracking by the kernel, allowing tracee to continue executing.
 
-当我们退出调试会话时，会通过 `ptrace(PTRACE_COND,...)`操作来恢复被调试进程继续执行，也就是ls正常执行列出目录下文件的命令，我们也看到了它输出了当前目录下的文件信息 `cmd go.mod go.sum LICENSE main.go syms target`。
+When we exit the debugging session, we will use `ptrace(PTRACE_COND,...)` operation to restore the tracee execution, that is, ls normal execution command to list the files in the directory, we also saw it output the current directory file information `cmd go.mod go.sum LICENSE main.go syms target`.
 
-`godbg exec <prog>`命令现在一切正常了！
+`godbg exec <prog>` command is now all right!
 
-> NOTE: 示例中程序退出时，没有显示调用 `ptrace(PTRACE_COND,...)`来恢复tracee的执行。其实tracer退出时，如果traced tracee还在，内核会自动解除tracee的跟踪状态。
+> NOTE: In the example, the program exits without displaying a call to `ptrace(PTRACE_COND,...)` to restore tracee execution. In fact, if tracee is still there when tracer exits, the kernel will automatically remove tracee tracking state.
 >
-> 如果tracee是我们显示启动的（不是attach的），那么在调试器退出时应该kill掉该进程（或者允许选择kill进程或让其继续执行），而不应该默认让其继续执行。
+> If tracee is our display (not attach), then we should kill the process (or allow the choice to kill the process or let it continue executing) instead of defaulting to continue executing.
 
-再次思考下，如果我们exec执行的是一个go程序，应该如何处理呢？因为go程序天然是多线程程序，从其主线程启动到陆续创建出其他的gc、sysmon、执行众多goroutines的线程是有一个过程的，那么这个过程中我们是很难人为去感知的，调试器如何对这个过程中创建的诸多线程自动发起ptrace attach呢？
+Again, if we exec execute a go program, how should we handle it? Because go program is naturally multi-threaded program, from its main thread startup to create other gc, sysmon, execute numerous goroutines threads is a process, then this process we are difficult to perceive human, how does the debugger automatically start ptrace attach for these numerous threads created in the process?
 
-没有什么好办法，调试器作为一个普通用户态程序，只能请求操作系统提供的服务代为处理，这就涉及到ptrace attach的具体选项 `PTRACE_O_TRACECLONE`了，添加了这个选项内核会在clone创建新线程时给新线程发送必要的信号，等新线程调度时自然会停下来。
+There's no good way, as a normal user program, the debugger can only request the operating system to provide services on behalf of it, this involves the specific ptrace attach options `PTRACE_O_TRACECLONE`. Adding this option will cause the kernel to send necessary signals to the new thread when the tracee is cloned, and when the new thread is scheduled, it will naturally stop.
 
-> **PTRACE_O_TRACECLONE***:
+> **PTRACE_O_TRACECLONE**:
 >
 > Stop the tracee at the next clone(2) and automatically start tracing the newly cloned process, which will start with a SIGSTOP, or PTRACE_EVENT_STOP if PTRACE_SEIZE was used.
 
-### 本节小结
+### This Section Summary
 
-本节实现了一个完整的“启动、跟踪”的实现原理、代码解释、示例演示。本节用到了start+attach或exec+attach的表述，这样做只是为了让章节内容组织上突出层层递进的关系。
+This section implements a complete "start, track" implementation principle, code explanation, example demonstration. This section uses start+attach or exec+attach expressions, doing this is just to highlight the layered relationship of the section content.
 
-严格来说，我们应该用trace代替attach的表述。因为attach会让读者误以为是tracer 主动 `ptrace(PTRACE_ATTACH,)`实现的，其实是 tracee 主动 `ptrace(PTRACE_TRACEME,)`实现的。但是attach更符合大家的习惯，所以我们还是使用attach这个术语。
+Strictly speaking, we should use trace instead of attach expression. Because attach will mislead readers to think that it is tracer actively `ptrace(PTRACE_ATTACH,)` implemented, it is actually tracee actively `ptrace(PTRACE_TRACEME,)` implemented. However, attach is more in line with people's habits, so we still use attach this term.
 
-另外对于多线程调试，如果希望新创建出来的线程自动被trace，需要tracer执行系统调用 `syscall.PtraceSetOptions(traceePID, syscall.PTRACE_O_TRACECLONE)` 来完成对tracee的设置，这样当tracee内部新建线程时，内核会自动处理让其停下来并通知tracer。另外为了更好地调试，一般是tracer launch tracee之后立即attach tracee，然后再立即对tracee设置PTRACE_O_TRACECLONE选项，这样就万无一失了，tracee以及其启动后创建的线程都会被纳入tracer跟踪之下。
+Also for multi-thread debugging, if we want new threads created automatically to be traced, we need tracer to execute system call `syscall.PtraceSetOptions(traceePID, syscall.PTRACE_O_TRACECLONE)` to complete the tracee setting, so that when tracee internal new threads, the kernel will automatically handle it to stop and notify tracer. In addition, for better debugging, usually tracer launch tracee after immediately attach tracee, then immediately set PTRACE_O_TRACECLONE option for tracee, so it's foolproof, tracee and its started threads will be under tracer tracking.
 
-> ps: 我们根据实际情况，看看是否有必要专门针对syscall.PtraceSetOptions(tracePID, syscall.PTRACE_O_TRACECLONE)单独开一小节、配套demo …… 实际上我们的最终demo里是有这部分代码、注释说明的。
+> ps: We will see if there is a need to specially open a small section, corresponding demo …… Actually, our final demo has this part of code, comment explanation.
 
-### 参考内容
+### Reference Content
 
 - Playing with ptrace, Part I, Pradeep Padala, https://www.linuxjournal.com/article/6100
 - Playing with ptrace, Part II, Pradeep Padala, https://www.linuxjournal.com/article/6210

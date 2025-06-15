@@ -1,21 +1,21 @@
-## 控制进程执行
+## Process Execution Control
 
-### 实现目标：step逐指令执行
+### Implementation Goal: Step-by-Step Instruction Execution
 
-在实现了反汇编以及添加移除断点功能后，我们将开始进一步探索如何控制调试进程的执行，如step逐指令执行、continue运行到断点位置，在后面符号级调试器开发章节，我们还会实现next逐语句执行。
+After implementing disassembly and breakpoint management functionality, we will now explore how to control the execution of the debugged process, such as step-by-step instruction execution and continuing execution until a breakpoint is hit. In the later chapters on symbol-level debugger development, we will also implement statement-by-statement execution (next).
 
-本节我们先实现 `step`命令来支持逐指令执行。
+In this section, we will implement the `step` command to support step-by-step instruction execution.
 
-### 代码实现
+### Code Implementation
 
-逐指令执行，通过执行 `ptrace(PTRACE_SINGLESTEP,...)` 操作即可由内核代为完成。但是在上述操作执行之前，step命令还有些特殊因素要考虑方能正常执行。
+Step-by-step instruction execution can be handled by the kernel through the `ptrace(PTRACE_SINGLESTEP,...)` operation. However, before executing this operation, the step command needs to consider some special factors to ensure proper execution.
 
-此时的PC值有可能是越过了一个断点之后的地址，比如：
+The current PC value might be at an address after a breakpoint, for example:
 
-1. 一条经过指令patch后的多字节指令，首字节处修改为了0xCC，当前寄存器PC值实际上是该多字节指令的第二个字节的地址，而非首字节的地址。如果对PC值不做修改，处理器执行的时候从第二字节开始解码会解码失败，无法执行指令；
-2. 一条单字节指令，如果我们直接decode下一个地址处的指令，还会漏掉断点处原来的一字节指令；
+1. For a multi-byte instruction that has been patched, if the first byte is modified to 0xCC, the current PC value is actually at the address of the second byte of the multi-byte instruction, not the first byte. If we don't modify the PC value, the processor will fail to decode the instruction when executing from the second byte;
+2. For a single-byte instruction, if we directly decode the instruction at the next address, we would miss the original one-byte instruction at the breakpoint location;
 
-为了保证step正常执行，在 `ptrace(PTRACE_SINGLESTEP,...) ` 之前，需要首先通过 `ptrace(PTRACE_PEEKTEXT,...)` 去读取 `PC-1` 地址处的数据，如果是0xCC，则表明此处为一个断点，需要将添加断点前的原始数据还原、PC=PC-1，然后再继续执行。
+To ensure proper step execution, before `ptrace(PTRACE_SINGLESTEP,...)`, we need to first use `ptrace(PTRACE_PEEKTEXT,...)` to read the data at address `PC-1`. If it's 0xCC, it indicates a breakpoint at this location. We need to restore the original data before the breakpoint was added, set PC=PC-1, and then continue execution.
 
 **file：cmd/debug/step.go**
 
@@ -31,14 +31,14 @@ import (
 
 var stepCmd = &cobra.Command{
 	Use:   "step",
-	Short: "执行一条指令",
+	Short: "Execute one instruction",
 	Annotations: map[string]string{
 		cmdGroupKey: cmdGroupCtrlFlow,
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("step")
 
-		// 读取PC值
+		// Read PC value
 		regs := syscall.PtraceRegs{}
 		err := syscall.PtraceGetRegs(TraceePID, &regs)
 		if err != nil {
@@ -67,7 +67,7 @@ var stepCmd = &cobra.Command{
 			return fmt.Errorf("single step error: %v", err)
 		}
 
-		// MUST: 当发起了某些对tracee执行控制的ptrace request之后，要调用syscall.Wait等待并获取tracee状态变化
+		// MUST: After initiating certain ptrace requests that control tracee execution, call syscall.Wait to wait for and get tracee state changes
 		var wstatus syscall.WaitStatus
 		var rusage syscall.Rusage
 		_, err = syscall.Wait4(TraceePID, &wstatus, syscall.WALL, &rusage)
@@ -92,29 +92,29 @@ func init() {
 
 ```
 
-以上就是step命令的实现代码，但这并不是一个十分友好的实现：
+The above is the implementation code for the step command, but it's not a very user-friendly implementation:
 
-- 它确实实现了逐指令执行，完成了本节目标；
-- 每逐指令执行之后，它还能打印当前寄存器PC值，方便我们确定下条待执行指令地址；
+- It does implement step-by-step instruction execution, achieving this section's goal;
+- After each instruction execution, it can print the current PC value, helping us determine the address of the next instruction to be executed;
 
-美中不足的是，没有将当前待执行指令的前后指令打印出来，并通过箭头指示下条待执行指令，一种更好的交互可能是这样：
+However, it doesn't print the instructions before and after the current instruction to be executed, nor does it indicate the next instruction with an arrow. A better interaction might look like this:
 
 ```
 godbg> step
 
-=> 地址1 汇编指令1
-   地址2 汇编指令2
-   地址3 汇编指令3
+=> address1 assembly_instruction1
+   address2 assembly_instruction2
+   address3 assembly_instruction3
    ...
 ```
 
-这里会影响到调试体验，我们将在后续过程中予以完善。
+This affects the debugging experience, which we will improve in subsequent development.
 
-> ps：上述代码是 [hitzhangjie/godbg](https://github.com/hitzhangjie/godbg) 中的实现，我们重点介绍了step的实现。另外在 [hitzhangjie/golang-debuger-lessons](https://github.com/hitzhangjie/golang-debugger-lessons) /10_step 下，我们也提供了一个step执行的示例，只有一个源文件，与其他demo互不影响，您也可以按照你的想法修改测试下，不用担心改坏整个 godbg的问题。
+> ps: The above code is from [hitzhangjie/godbg](https://github.com/hitzhangjie/godbg), where we focus on the step implementation. Additionally, in [hitzhangjie/golang-debuger-lessons](https://github.com/hitzhangjie/golang-debugger-lessons)/10_step, we also provide a step execution example in a single source file, independent of other demos. You can modify and test it according to your ideas without worrying about breaking the entire godbg project.
 
-### 代码测试
+### Code Testing
 
-启动一个程序，获取其进程pid，然后执行 `godbg attach <pid>`对进程进行调试，等调试会话就绪之后，我们输入 `disass`反汇编看下当前指令地址之后的汇编指令有哪些。
+Start a program, get its process pid, then execute `godbg attach <pid>` to debug the process. Once the debug session is ready, we input `disass` to see the assembly instructions after the current instruction address.
 
 ```bash
 godbg> disass
@@ -130,7 +130,7 @@ godbg> disass
 0x40ab6d movl $0x0,0x8(%rsp)
 ```
 
-然后尝试执行 `step` 命令，观察输出情况。
+Then try executing the `step` command and observe the output.
 
 ```bash
 godbg> step
@@ -145,22 +145,22 @@ single step ok, current PC: 0x40ab58
 godbg> 
 ```
 
-我们执行了step指令3次，step每次执行一条指令之后，会输出执行指令后的PC值，依次是0x40ab4e、0x40ab53、0x40ab58，依次是下条指令的首地址。
+We executed the step instruction three times. After each instruction execution, step outputs the PC value after execution, which are 0x40ab4e, 0x40ab53, and 0x40ab58 respectively, each being the starting address of the next instruction.
 
-不禁要问，执行系统调用 `ptrace(PTRACE_SINGLESTEP,...)` 时，内核是如何实现逐指令执行的？显然它没有采用指令patch的方式（如果也是指令patch的方式，上述step命令输出的PC值应该是在当前显示的值基础上分别+1）。
+One might wonder, how does the kernel implement step-by-step instruction execution when we execute the system call `ptrace(PTRACE_SINGLESTEP,...)`? Clearly, it doesn't use the instruction patching method (if it did, the PC values output by the step command should be the current displayed values plus 1 respectively).
 
-### 更多相关内容：SINGLESTEP
+### More Related Content: SINGLESTEP
 
-那内核是如何处理PTRACE_SINGLESTEP请求的呢？SINGLESTEP确实比较特殊，在man(2)手册里面并没有找到太多有价值的信息：
+So how does the kernel handle the PTRACE_SINGLESTEP request? SINGLESTEP is indeed special, and the man(2) manual doesn't provide much valuable information:
 
 ```bash
    PTRACE_SINGLESTEP stops
        [Details of these kinds of stops are yet to be documented.]
 ```
 
-man(2)手册里面没有太多有价值的相关信息，查看内核源码以及Intel开发手册之后，可以了解到这方面的细节。
+There isn't much valuable information in the man(2) manual, but after examining the kernel source code and Intel development manual, we can understand these details.
 
-1. SINGLESTEP调试在Intel平台上部分借助了处理器自身硬件特性来实现的，参考《Intel® 64 and IA-32 Architectures Software Developer's Manual Volume 1: Basic Architecture》，Intel架构处理器是有一个标识寄存器EFLAGS，当通过内核将标志寄存器的TF标志置为1时，处理器会自动进入单步执行模式，清0退出单步执行模式。
+1. SINGLESTEP debugging on Intel platforms partially relies on the processor's own hardware features. According to the "Intel® 64 and IA-32 Architectures Software Developer's Manual Volume 1: Basic Architecture", Intel architecture processors have a flag register EFLAGS. When the kernel sets the TF flag in this register to 1, the processor automatically enters single-step execution mode, and clears it to exit single-step mode.
 
    > **System Flags and IOPL Field**
    >
@@ -168,8 +168,8 @@ man(2)手册里面没有太多有价值的相关信息，查看内核源码以�
    >
    > **TF (bit 8) Trap flag** — Set to enable single-step mode for debugging; clear to disable single-step mode.
    >
-2. 我们执行系统调用 `syscall.PtraceSingleStep(...)` 时，实际上是 `ptrace(PTRACE_SINGLESTEP, pid...)` ，此时内核会将被跟踪的tracee的task_struct中的寄存器部分的flags设置为flags |= TRAP，然后调度tracee执行。
-3. 调度器执行tracee时会先将其进程控制块task_struct中的硬件上下文信息还原到处理器寄存器中，然后再执行对应tracee的指令。此时处理器发现EFLAGS.TF=1，执行指令的时候就会先清空该标志位，然后执行单条指令，执行完成后处理器会自动生成一个陷阱中断，不需要软件层面模拟。
+2. When we execute the system call `syscall.PtraceSingleStep(...)`, it's actually `ptrace(PTRACE_SINGLESTEP, pid...)`. At this point, the kernel sets the flags in the tracee's task_struct register section to flags |= TRAP, then schedules the tracee to execute.
+3. When the scheduler executes the tracee, it first restores the hardware context information from the process's task_struct to the processor registers, then executes the tracee's instructions. When the processor detects EFLAGS.TF=1, it will first clear this flag bit when executing an instruction, then execute a single instruction. After execution, the processor automatically generates a trap interrupt, without requiring software-level simulation.
 
    > **Single-step interrupt**
    > When a system is instructed to single-step, it will execute one instruction and then stop.
@@ -177,6 +177,6 @@ man(2)手册里面没有太多有价值的相关信息，查看内核源码以�
    > The Intel 8086 trap flag and type-1 interrupt response make it quite easy to implement a single-step feature in an 8086-based system. If the trap flag is set, the 8086 will automatically do a type-1 interrupt after each instruction executes. When the 8086 does a type-1 interrupt, ...
    > The trap flag is reset when the 8086 does a type-1 interrupt, so the single-step mode will be disabled during the interrupt-service procedure.
    >
-4. 内核中断服务程序负责处理这个TRAP，其实就是继续暂停tracee调度（此时也会保存下硬件上下文信息），然后内核会给tracer发送SIGTRAP信号，以这种方式通知调试器tracer你跟踪的tracee已经单步执行了一条指令后停下来等待接收后续调试命令了。
+4. The kernel's interrupt service routine handles this TRAP by pausing the tracee's scheduling (at this time it also saves the hardware context information), then the kernel sends a SIGTRAP signal to the tracer, notifying the debugger that the tracee you're tracking has executed one instruction and stopped, waiting to receive subsequent debug commands.
 
-这就是Intel平台下单步执行的一些细节信息，读者如果对其他硬件平台感兴趣，也可以自行了解下它们是如何设计实现来解决单步调试问题的。
+These are some details about single-step execution on Intel platforms. Readers interested in other hardware platforms can also learn about how they design and implement solutions for single-step debugging.

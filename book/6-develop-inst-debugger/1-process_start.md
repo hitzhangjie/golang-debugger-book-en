@@ -1,74 +1,74 @@
-## 启动进程
+## Starting a Process
 
-### 实现目标：`godbg exec <prog>`
+### Implementation Goal: `godbg exec <prog>`
 
-调试器执行调试，首先得确定要调试的目标。它可能是一个进程实例，或者是一个core文件。为了便利性，调试器也可以代为执行编译操作，如dlv debug的目标可以是一个go main module。
+When a debugger performs debugging, it first needs to determine the target to debug. This could be a process instance or a core file. For convenience, the debugger can also handle compilation operations, such as dlv debug which can target a Go main module.
 
-我们先关注如何调试一个进程，core文件只是进程的一个内核转储文件，调试器只能查看当时的栈帧情况。对进程进行调试涉及到的方方面面基本覆盖了对core文件进行调试的内容，所以我们先将重点放在对进程进行调试上。
+Let's first focus on how to debug a process. A core file is just a kernel dump of a process, and the debugger can only view the stack frame situation at that time. The aspects involved in debugging a process basically cover the content of debugging a core file, so we'll focus on process debugging first.
 
-调试一个进程，主要有以下几种情况：
+There are mainly the following scenarios for debugging a process:
 
-- 如果进程还未存在，我们需要启动指定进程，如dlv exec、gdb等指定程序名启动调试时会启动进程；
-- 如果进程已经存在，我们需要通过进程pid来跟踪进程，如dlv attach、gdb等通过-p指定pid对运行进程调试；
+- If the process doesn't exist yet, we need to start the specified process, such as when dlv exec, gdb, etc. specify a program name to start debugging;
+- If the process already exists, we need to track the process through its pid, such as dlv attach, gdb, etc. using -p to specify the pid for debugging a running process;
 
-为了方便开发、调试，调试器可能也包含了编译构建的任务，如保证构建产物中包含调试信息、避免编译过度优化对调试的不利影响等。通常这些操作需要传递特殊的选项给编译器、连接器，对开发者而言并不是一件很友好的事情。考虑到这点，go调试器dlv在执行 `dlv debug`命令时，会自动传递 `-gcflags="all=-N -l"`选项来禁用编译构建过程中的内联、优化，以保证构建产物满足调试器调试需要。
+For development and debugging convenience, the debugger may also include compilation and build tasks, such as ensuring the build product contains debug information and avoiding the negative impact of excessive optimization on debugging. Usually, these operations require passing special options to the compiler and linker, which isn't very user-friendly for developers. Considering this, the Go debugger dlv automatically passes the `-gcflags="all=-N -l"` option when executing the `dlv debug` command to disable inlining and optimization during the compilation and build process, ensuring the build product meets the debugger's needs.
 
-下面先介绍下第一种情况，指定程序路径，启动程序创建进程。
+Let's first introduce the first scenario: specifying a program path to start the program and create a process.
 
-我们将实现程序godbg，它支持exec子命令，支持接收参数prog，godbg将启动程序prog并获取其执行结果。
+We will implement the program godbg, which supports the exec subcommand and accepts the parameter prog. godbg will start the program prog and obtain its execution results.
 
-> prog代表一个可执行程序，它可能是一个指向可执行程序的路径，也可能是一个在PATH路径中可以搜索到的可执行程序的名称。
+> prog represents an executable program, which could be a path to an executable program or the name of an executable program that can be found in the PATH.
 
-### 基础知识
+### Basic Knowledge
 
-go标准库提供了os/exec包，允许指定程序名来启动进程。先介绍下如何通过go标准库启动程序创建进程。
+The Go standard library provides the os/exec package, which allows starting a process by specifying a program name. Let's first introduce how to start a program and create a process using the Go standard library.
 
-通过 `cmd = exec.Command(...)`方法我们可以创建一个Cmd实例：
+Through the `cmd = exec.Command(...)` method, we can create a Cmd instance:
 
-- 之后则可以通过 `cmd.Start()`方法来启动程序，如果希望获取结果则通过 `cmd.Wait()`等待进程结束再获取结果；
-- 如果希望启动程序并等待执行结束，也可以通过 `cmd.Run()`，命令输出的stdout、stderr信息可通过修改cmd.Stdout、cmd.Stderr为一个bytes.Buffer来收集；
-- 如果希望启动程序并等待执行结束，同时能获取stdout、stderr输出信息，也可以通过 `buf, err := Cmd.CombineOutput()`来完成。
+- After that, we can start the program using the `cmd.Start()` method. If we want to get the results, we can use `cmd.Wait()` to wait for the process to end and then get the results;
+- If we want to start the program and wait for it to finish, we can also use `cmd.Run()`. The stdout and stderr information of the command output can be collected by modifying cmd.Stdout and cmd.Stderr to a bytes.Buffer;
+- If we want to start the program, wait for it to finish, and get the stdout and stderr output information, we can also use `buf, err := Cmd.CombineOutput()`.
 
 ```go
 package exec // import "os/exec"
 
-// Command 该方法接收可执行程序名称或者路径，arg是传递给可执行程序的参数信息，
-// 该函数返回一个Cmd对象，通过它来启动程序、获取程序执行结果等，注意参数name
-// 可以是一个可执行程序的路径，也可以是一个PATH中可以搜索到的可执行程序名
+// Command This method receives an executable program name or path, arg is the parameter information passed to the executable program.
+// This function returns a Cmd object, through which we can start the program, get program execution results, etc. Note that the parameter name
+// can be a path to an executable program or the name of an executable program that can be found in PATH
 func Command(name string, arg ...string) *Cmd
 
-// Cmd 通过Cmd来执行程序、获取程序执行结果等等，Cmd一旦调用Start、Run等方法之
-// 后就不能再复用了
+// Cmd Through Cmd, we can execute programs, get program execution results, etc. Once Cmd calls methods like Start, Run, etc.,
+// it cannot be reused
 type Cmd struct {
     ...
 }
 
-// CombinedOutput 返回程序执行时输出到stdout、stderr的信息
+// CombinedOutput Returns the information output to stdout and stderr during program execution
 func (c *Cmd) CombinedOutput() ([]byte, error)
 
-// Output 返回程序执行时输出到stdout的信息，返回值列表中的error表示执行中遇到错误
+// Output Returns the information output to stdout during program execution. The error in the return value list indicates an error encountered during execution
 func (c *Cmd) Output() ([]byte, error)
 
-// Run 启动程序并且等待程序执行结束，返回值列表中的error表示执行中遇到错误
+// Run Starts the program and waits for it to finish. The error in the return value list indicates an error encountered during execution
 func (c *Cmd) Run() error
 
-// Start 启动程序，但是不等待程序执行结束，返回值列表中的error表示执行中遇到错误
+// Start Starts the program but doesn't wait for it to finish. The error in the return value list indicates an error encountered during execution
 func (c *Cmd) Start() error
 
 ...
 
-// Wait 等待cmd执行结束，该方法必须与Start()方法配合使用，返回值error表示执行中遇到错误
+// Wait Waits for cmd to finish executing. This method must be used in conjunction with the Start() method. The error return value indicates an error encountered during execution
 //
-// Wait等待程序执行结束并获得程序的退出码（也就是返回值，os.Exit(?)将值返回给操作系统进而被父进程获取），
-// 并释放对应的资源(比如id资源，联想下PCB)
+// Wait waits for the program to finish executing and obtains the program's exit code (that is, the return value, os.Exit(?) returns the value to the operating system and is then obtained by the parent process),
+// and releases corresponding resources (such as id resources, think of PCB)
 func (c *Cmd) Wait() error
 ```
 
-### 代码实现
+### Code Implementation
 
-**src详见：golang-debugger-lessons/1_process_start**
+**Source code see: golang-debugger-lessons/1_process_start**
 
-下面基于go标准库 `os/exec` package来演示如何启动程序创建进程实例。
+Below is a demonstration of how to start a program and create a process instance using the Go standard library `os/exec` package.
 
 file: main.go
 
@@ -112,16 +112,16 @@ func main() {
 }
 ```
 
-这里的程序逻辑比较简单：
+The program logic here is relatively simple:
 
-- 程序运行时，首先检查命令行参数，
-  - `godbg exec <prog>`，至少有3个参数，如果参数数量不对，直接报错退出；
-  - 接下来校验第2个参数，如果不是exec，也直接报错退出；
-- 参数正常情况下，第3个参数应该是一个程序路径或者可执行程序文件名，我们创建一个exec.Command对象，然后启动并获取运行结果；
+- When the program runs, it first checks the command line arguments,
+  - `godbg exec <prog>`, there should be at least 3 arguments. If the number of arguments is incorrect, it reports an error and exits;
+  - Next, it checks the second argument. If it's not exec, it also reports an error and exits;
+- With normal arguments, the third argument should be a program path or executable program filename. We create an exec.Command object, then start it and get the running results;
 
-### 代码测试
+### Code Testing
 
-您可以自己编译构建，完成相关测试。
+You can compile and build it yourself to complete the relevant tests.
 
 ```bash
 1_start-process $ GO111MODULE=off go build -o godbg main.go
@@ -129,9 +129,9 @@ func main() {
 ./godbg exec <prog>
 ```
 
-> ps: 当然也可以考虑将godbg拷贝到PATH路径下或者go install之后再进行测试。
+> ps: Of course, you can also consider copying godbg to the PATH or using go install before testing.
 
-现在的程序逻辑单文件就可以完成，因此 `go run main.go`就可以快速测试，如在目录golang-debugger-lessons/1_start-process下执行 `GO111MODULE=off go run main.go exec ls` 进行测试。
+The current program logic can be completed in a single file, so `go run main.go` can be used for quick testing. For example, execute `GO111MODULE=off go run main.go exec ls` in the directory golang-debugger-lessons/1_start-process for testing.
 
 ```bash
 1_start-process $ GO111MODULE=off go run main.go exec ls
@@ -140,8 +140,8 @@ main.go
 README.md
 ```
 
-godbg正常执行了命令ls并显示出了当前目录下的文件，后面我们将用正常的go程序作为被调试进程，本小节掌握如何启动进程即可。
+godbg successfully executed the ls command and displayed the files in the current directory. Later, we will use normal Go programs as the debugged process. For this section, it's sufficient to understand how to start a process.
 
-> ps：关于测试环境，强烈建议读者能使用与作者开发时一致的环境，以方便读者能顺利地完成测试。为简化这一过程，godbg工程中提供了容器开发配置 `devcontainer.json`，请读者使用vscode、goland 2023.2的容器开发模式打开工程并进行测试。
+> ps: Regarding the testing environment, it's strongly recommended that readers use the same environment as the author during development to facilitate smooth testing. To simplify this process, the godbg project provides container development configuration `devcontainer.json`. Please use VSCode or GoLand 2023.2's container development mode to open the project and perform testing.
 >
-> ps：2025.2.18，容器的隔离性比较弱，我现在有点想提供一个配套的虚拟机来方便大家测试了，但是虚拟机文件vmdk往往都很大，大家下载这个环境也比较费劲。但是对于一些初学者，相比于容器技术可能更熟悉虚拟机的使用。
+> ps: 2025.2.18, the isolation of containers is relatively weak. I'm now considering providing a matching virtual machine to facilitate testing, but virtual machine files (vmdk) are often very large, making it difficult for everyone to download this environment. However, for some beginners, they might be more familiar with using virtual machines than container technology.

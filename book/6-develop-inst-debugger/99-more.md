@@ -1,60 +1,60 @@
-## 更多关于指令级调试的内容
+## More About Instruction-Level Debugging
 
-### 简单回顾
+### Brief Review
 
-本章从零开始基于Go语言构建了一个指令级调试器，并通过详细的说明和示例进行了解释，让读者能够亲手实践并理解其中的每个细节。我们不仅提供了可以直接编译运行的测试代码，还精心设计了每一步测试操作和预期结果，力求使每位学习者都能够轻松上手并在实践中获得深刻的体验。
+This chapter builds an instruction-level debugger from scratch using Go language, explaining it through detailed descriptions and examples, allowing readers to practice and understand every detail hands-on. We not only provided test code that can be directly compiled and run but also carefully designed each test operation and expected results, striving to make it easy for every learner to get started and gain profound experience through practice.
 
-在整个开发过程中，我们深入探讨了Go语言运行时环境与操作系统内核层面的工作，帮助读者建立了更全面的调试知识框架。这不仅仅是一次技术上的探索之旅，相信也让读者减少了对Go运行时、Linux内核的畏惧，增加了进一步学习钻研的兴趣。这种经历对于希望成为优秀软件工程师的人而言非常重要。
+Throughout the development process, we delved deep into the Go language runtime environment and operating system kernel level work, helping readers establish a more comprehensive debugging knowledge framework. This is not just a technical exploration journey; we believe it has also reduced readers' fear of the Go runtime and Linux kernel while increasing their interest in further study and research. This experience is very important for those who aspire to become excellent software engineers.
 
-> ps: 没有开源大佬们的贡献，我也没啥好学习、好总结、好分享的。特别佩服 [derekparker](https://github.com/derekparker) 和 [arzilli](https://github.com/aarzilli) 对Go语言调试器 `go-delve/delve` 的贡献 👍
+> Note: Without the contributions of open-source experts, I would have nothing to learn, summarize, or share. Special thanks to [derekparker](https://github.com/derekparker) and [arzilli](https://github.com/aarzilli) for their contributions to the Go language debugger `go-delve/delve` 👍
 
-### 名品鉴赏
+### Famous Tools Review
 
-本书用一章来介绍了指令级调试器的常见功能以及相关技术细节，但离高效实用还有距离。本书初衷并不是为了实现一款更高效的调试器，而是一款强大的调试器实在令人着迷，它好比让你拥有了上帝之眼和造物主之手，你可以观察世界如何运行，也可以用指尖轻触来影响它们的运行轨迹。
+This book dedicates a chapter to introducing common features of instruction-level debuggers and related technical details, but there's still a distance from being highly efficient and practical. The original intention of this book was not to implement a more efficient debugger, but a powerful debugger is truly fascinating - it's like giving you the eyes of God and the hands of a creator, allowing you to observe how the world runs and influence its trajectory with a touch of your fingertips.
 
-这背后用来支撑实现它们的技术细节怎能不让人着迷？所以我想把这些分享出来，进而让大家产生这种认识或者共识的基础上，继续去探索、去利用好这些强大的工具，为己所用。
+How can the technical details behind their implementation not be fascinating? Therefore, I want to share these insights, so that based on this understanding or consensus, everyone can continue to explore and make good use of these powerful tools for their own purposes.
 
-支持指令级调试的调试器，下面这些比较知名：
+Here are some well-known debuggers that support instruction-level debugging:
 
-1. **GDB（GNU调试器）** - 在汇编模式下使用时，它可以提供完整的指令级调试功能。GDB支持多种处理器架构，并可以与各种前端界面集成。
-2. **WinDbg** - 微软开发的强大低级调试器，广泛用于Windows系统调试和驱动开发。它支持内核模式调试和用户模式调试，可以分析转储文件和实时系统。
-3. **OllyDbg** - 广泛用于Windows二进制分析的工具，具有友好的用户界面和丰富的插件生态系统。特别适合逆向工程和恶意软件分析。
-4. **IDA Pro** - 专业级反汇编器和调试器，提供交互式调试功能，支持多平台和多处理器架构，在安全研究和逆向工程领域非常流行。
-5. **LLDB** - LLVM项目的一部分，提供与GDB相似的功能，但架构更现代，特别适合调试使用LLVM编译的程序。
-6. **x64dbg/x32dbg** - 开源Windows调试器，拥有直观的用户界面和强大的功能集，在安全研究人员和逆向工程师中非常受欢迎。
-7. **Radare2/Cutter** - 开源逆向工程框架，提供强大的命令行工具和图形界面(Cutter)，支持多种文件格式和架构。
-8. **Ghidra** - 美国国家安全局发布的逆向工程工具，具有强大的分析能力和插件系统，包含调试功能。
+1. **GDB (GNU Debugger)** - When used in assembly mode, it provides complete instruction-level debugging capabilities. GDB supports multiple processor architectures and can be integrated with various front-end interfaces.
+2. **WinDbg** - A powerful low-level debugger developed by Microsoft, widely used for Windows system debugging and driver development. It supports kernel-mode and user-mode debugging, and can analyze dump files and live systems.
+3. **OllyDbg** - A tool widely used for Windows binary analysis, featuring a user-friendly interface and a rich plugin ecosystem. Particularly suitable for reverse engineering and malware analysis.
+4. **IDA Pro** - A professional-grade disassembler and debugger that provides interactive debugging capabilities, supports multiple platforms and processor architectures, and is very popular in security research and reverse engineering.
+5. **LLDB** - Part of the LLVM project, provides functionality similar to GDB but with a more modern architecture, particularly suitable for debugging programs compiled with LLVM.
+6. **x64dbg/x32dbg** - Open-source Windows debugger with an intuitive user interface and powerful feature set, very popular among security researchers and reverse engineers.
+7. **Radare2/Cutter** - Open-source reverse engineering framework, providing powerful command-line tools and graphical interface (Cutter), supporting multiple file formats and architectures.
+8. **Ghidra** - Reverse engineering tool released by the National Security Agency, featuring powerful analysis capabilities and plugin system, including debugging functionality.
 
-### 各自优势
+### Their Advantages
 
-**指令级调试的优势**:
+**Advantages of Instruction-Level Debugging**:
 
-上面这些知名的反汇编工具、调试器、软件逆向工具，如同所介绍的那样，确实功能强大，建议读者能花时间了解一下。而，单纯就指令级调试这部分而言，我觉得它们的优势主要体现在下面这些方面，这是符号级调试器设计实现时可能不那么重点关注的（比如dlv支持disass但不支持radare2那样的callgraph）。
+As introduced above, these well-known disassembly tools, debuggers, and software reverse engineering tools are indeed powerful, and we recommend readers take time to understand them. However, specifically regarding instruction-level debugging, I think their advantages are mainly reflected in the following aspects, which might not be the focus of symbolic debugger design and implementation (for example, dlv supports disass but not callgraph like radare2).
 
-* **编译优化问题** ：当编译器优化导致意外行为，需要查看实际生成的指令。
-* **硬件相关问题** ：调试与硬件直接交互的代码，如驱动程序、嵌入式系统。
-* **没有源码的软件分析** ：逆向工程商业软件或遗留系统。
-* **复杂崩溃分析** ：调查从源代码中不明显的复杂崩溃路径。
-* **安全漏洞研究** ：分析和开发漏洞利用或防御机制。
+* **Compiler Optimization Issues**: When compiler optimizations cause unexpected behavior, requiring examination of actually generated instructions.
+* **Hardware-Related Issues**: Debugging code that directly interacts with hardware, such as drivers and embedded systems.
+* **Software Analysis Without Source Code**: Reverse engineering commercial software or legacy systems.
+* **Complex Crash Analysis**: Investigating complex crash paths not obvious from source code.
+* **Security Vulnerability Research**: Analyzing and developing exploit or defense mechanisms.
 
-**符号级调试的优势**:
+**Advantages of Symbolic Debugging**:
 
-指令级调试器固然强大，但是也要分什么场景、什么开发者来用，对于大多数使用高级语言编写业务逻辑的开发者而言，一款好用的符号级调试器可能更实用。因此这里我们需要强调下指令级调试器、符号级调试器各自的优势，它们并不是割裂的，有些符号级调试器也支持常见的指令级调试。
+While instruction-level debuggers are powerful, it depends on the scenario and the developer. For most developers writing business logic in high-level languages, a good symbolic debugger might be more practical. Therefore, we need to emphasize the respective advantages of instruction-level and symbolic debuggers - they are not separate, and some symbolic debuggers also support common instruction-level debugging.
 
-* **更高抽象层次** ：使用变量、函数和数据结构而不是寄存器和内存地址，使调试过程更直观。
-* **更快的调试流程** ：对于熟悉源代码的开发人员来说更加直观，可以更快地定位问题。
-* **语言特性支持** ：理解特定编程语言的构造，如类、异常处理、泛型等。
-* **生产力提升** ：在自己编写的代码中识别问题更快捷，大多数日常开发调试任务更高效。
-* **团队协作** ：更容易与团队成员共享和讨论发现，因为调试是在源代码级别进行的。
+* **Higher Level of Abstraction**: Using variables, functions, and data structures instead of registers and memory addresses makes the debugging process more intuitive.
+* **Faster Debugging Process**: More intuitive for developers familiar with source code, allowing faster problem location.
+* **Language Feature Support**: Understanding specific programming language constructs, such as classes, exception handling, generics, etc.
+* **Productivity Enhancement**: Quicker problem identification in self-written code, more efficient for most daily development debugging tasks.
+* **Team Collaboration**: Easier to share and discuss findings with team members, as debugging is done at the source code level.
 
-### 本文小结
+### Summary
 
-指令级调试虽然学习曲线较陡，但它提供了源码级调试无法比拟的深度和控制力，对于需要深入理解系统内部工作原理的开发人员和研究人员来说是不可或缺的工具。
+Although instruction-level debugging has a steep learning curve, it provides depth and control that source-level debugging cannot match, making it an indispensable tool for developers and researchers who need to deeply understand how systems work internally.
 
-> ps: 这里建议读者掌握radare2的使用，它也有图形化界面支持的版本Cutter。以前我在macOS平台下经常用的是Hopper，机缘巧合了解到了radare2，也推荐给大家。
+> Note: Here we recommend readers to master the use of radare2, which also has a version with graphical interface support called Cutter. Previously, I often used Hopper on macOS, but by chance, I learned about radare2, and I recommend it to everyone.
 
-OK，关于指令级调试的部分，我们就先介绍到这里，我们接下来将继续解开符号级调试的神秘面纱。指令级调试器层面解决的是对tracee的控制层面的问题（执行、暂停、寄存器访问、内存访问等），符号级调试器层面解决的是如何建立起源码和进程映像之间的联系，如源码和指令之间的关系，变量值、数据类型和内存数据间的关系，等等。符号级调试器让调试变得更加简单高效，尤其是你不需要关心更底层细节的时候。
+OK, regarding instruction-level debugging, we'll stop here. Next, we'll continue to unveil the mystery of symbolic debugging. Instruction-level debuggers solve problems at the control level of the tracee (execution, pause, register access, memory access, etc.), while symbolic debuggers solve how to establish the connection between source code and process image, such as the relationship between source code and instructions, the relationship between variable values, data types, and memory data, etc. Symbolic debuggers make debugging simpler and more efficient, especially when you don't need to care about lower-level details.
 
-符号级调试器的支持是一个更加庞大的工程，我们将学习调试信息如何建立起对不同编程语言、程序构造的支持（DWARF），还将了解这些信息如何生成（编译器、连接器）以及被利用（调试器），我们还将了解如何根据调试信息指导来建立对源码、进程内存数据的理解。
+Support for symbolic debuggers is an even larger project. We will learn how debugging information establishes support for different programming languages and program constructs (DWARF), understand how this information is generated (compiler, linker) and utilized (debugger), and learn how to build understanding of source code and process memory data based on debugging information guidance.
 
-让我们开始吧 ~
+Let's begin ~

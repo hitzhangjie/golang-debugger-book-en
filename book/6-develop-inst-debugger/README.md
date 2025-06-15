@@ -1,20 +1,20 @@
-### 指令级调试
+### Instruction-Level Debugging
 
-本章开始进入指令级调试器开发，我们将一步步实现指令级调试相关操作。
+This chapter begins the development of an instruction-level debugger. We will implement instruction-level debugging operations step by step.
 
-#### 指令级 VS. 符号级调试
+#### Instruction-Level vs. Symbol-Level Debugging
 
-指令级调试是相对符号级调试而言的。它只关心机器指令级别的调试，不依赖调试符号、源程序信息。缺少了调试符号信息，会让调试变得有些困难，难以理解调试代码的含义。
+Instruction-level debugging is relative to symbol-level debugging. It only concerns debugging at the machine instruction level and does not rely on debug symbols or source program information. The lack of debug symbol information makes debugging somewhat difficult and harder to understand the meaning of the code being debugged.
 
-但是指令级调试技术是符号级调试技术的基石，可以说符号级调试相关的操作是在指令级调试基础上的完善。大家在软件开发过程中接触到的大多数调试器，是符号级调试器，如gdb、lldb、dlv等，但是它们也具备指令级调试能力。当然也有一些专门的指令级调试器，如radare2、IDA Pro、OllyDbg、Hopper等。
+However, instruction-level debugging technology is the foundation of symbol-level debugging technology. It can be said that symbol-level debugging operations are improvements built upon instruction-level debugging. Most debuggers that developers encounter in software development are symbol-level debuggers, such as gdb, lldb, and dlv, but they also possess instruction-level debugging capabilities. Of course, there are also specialized instruction-level debuggers like radare2, IDA Pro, OllyDbg, and Hopper.
 
-#### 指令级调试的实践应用
+#### Practical Applications of Instruction-Level Debugging
 
-我们既然要支持指令级调试能力，不妨多说一点。
+Since we're going to support instruction-level debugging capabilities, let's discuss this a bit more.
 
-指令级调试技术，在软件逆向工程中的应用是非常广泛的。当然这里要求调试器具备更加强大的能力，绝不仅仅是只支持step逐指令执行、读写内存、读写寄存器这么简单，下面就以使用过的radare2为例演示下其有多强大。
+Instruction-level debugging technology is widely used in software reverse engineering. Of course, this requires the debugger to have more powerful capabilities, far beyond just supporting step-by-step instruction execution, memory reading/writing, and register reading/writing. Let's demonstrate how powerful it can be using radare2 as an example.
 
-以如下程序main.go为例：
+Take the following program main.go as an example:
 
 ```go
 package main
@@ -25,15 +25,15 @@ func main() {
 }
 ```
 
-执行`go build -o main main.go`编译完成，然后执行`radare2 main`：
+After compiling with `go build -o main main.go`, execute `radare2 main`:
 
 ```bash
 $ go build -o main main.go
 $ 
 $ r2 main
-[0x0105cba0]> s sym._main.main             ; 注意先定位到函数main.main
-[0x0109ce80]> af                           ; 对当前函数进行分析
-[0x0109ce80]> pdf                          ; 反汇编当前函数并打印
+[0x0105cba0]> s sym._main.main             ; Note: first locate the main.main function
+[0x0109ce80]> af                           ; Analyze the current function
+[0x0109ce80]> pdf                          ; Disassemble and print the current function
             ; CODE XREF from sym._main.main @ 0x109cf04
 ┌ 137: sym._main.main ();
 │           ; var int64_t var_50h @ rsp+0x8
@@ -72,21 +72,21 @@ $ r2 main
 [0x0109ce80]> 
 ```
 
-我们在radare2调试会话里面执行了3个命令：
+We executed three commands in the radare2 debugging session:
 
--   s sym._main.main，定位到main.main函数；
--   af，对当前函数进行分析；
--   pdf，对当前函数进行反汇编并打印出来；
+- s sym._main.main, locate the main.main function;
+- af, analyze the current function;
+- pdf, disassemble and print the current function;
 
-大家可以看到，与普通符号级调试器disass命令不同的是，radare2不仅展示了汇编信息，还将函数调用关系的起止点通过箭头的形式给标识了出来。
+As you can see, unlike the disass command in ordinary symbol-level debuggers, radare2 not only shows assembly information but also marks the start and end points of function calls with arrows.
 
-甚至可以执行命令`vV`将汇编指令转换成调用图（callgraph）的形式：
+You can even execute the command `vV` to convert the assembly instructions into a callgraph form:
 
 ![radare2 callgraph](assets/radare2-callgraph.png)
 
-读者朋友们可能会认为该功能有点神奇，当读者理解了像ABI、function prologue、function epilogue之后就对如何实现此类功能习以为常了，实际上在指令级别、高级语言级别均可实现此类功能。
+Readers might find this feature somewhat magical, but once you understand concepts like ABI, function prologue, and function epilogue, you'll become accustomed to how such functionality is implemented. In fact, this kind of functionality can be implemented at both the instruction level and high-level language level.
 
-radare2的功能之强大远不只是这些，从其支持的命令及选项可见一斑，其学习曲线也异常陡峭，逆向工程师、对二进制分析感兴趣的人对其青睐有加，也是个有力证明。
+The power of radare2 goes far beyond these features, as evident from its supported commands and options. Its steep learning curve is also a testament to its popularity among reverse engineers and those interested in binary analysis.
 
 ```bash
 [0x0109ce80]> ?
@@ -138,10 +138,10 @@ Prefix with number to repeat command N times (f.ex: 3x)
 [0x0109ce80]> 
 ```
 
-如果读者进一步了解下rafare2的详细功能，它功能之强大一定会让你感到惊叹。
+If readers further explore radare2's detailed features, its power will surely amaze you.
 
-ps: 如果读者想了解radare2的使用，可以先看下我之前写过的一偏实践文章：[monkey patching in golang](hitzhangjie.pro/blog/2020-08-23-monkey_patching_in_go/)，描述了指令patch技术在golang mock测试中 的应用，以及如何借助radare2来演示指令patching的过程。
+ps: If readers want to learn about using radare2, you can first look at a practical article I wrote earlier: [monkey patching in golang](hitzhangjie.pro/blog/2020-08-23-monkey_patching_in_go/), which describes the application of instruction patching technology in golang mock testing and how to use radare2 to demonstrate the instruction patching process.
 
-#### 有限的指令级调试支持
+#### Limited Instruction-Level Debugging Support
 
-本书中，我们仅介绍如何支持有限的指令级调试能力，我们的初衷是学习分享，而非工程上的取代、大而全。如果篇幅允许，也会适当的和其他指令级调试做对比，探讨下某些特性的实现方式。
+In this book, we will only introduce how to support limited instruction-level debugging capabilities. Our original intention is to learn and share, not to replace or create a comprehensive engineering solution. If space permits, we will also appropriately compare with other instruction-level debuggers and discuss the implementation methods of certain features.

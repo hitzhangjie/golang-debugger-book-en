@@ -1,25 +1,25 @@
-## 扩展阅读：如何跟踪新创建的线程
+## Extended Reading: How to Track Newly Created Threads
 
-### 实现目标
+### Implementation Goal
 
-前面演示调试器操作时，为了简化多线程调试的挑战，有些测试场景我们使用了单线程程序来进行演示。但是真实场景下，我们的程序往往是多线程程序。
+In previous demonstrations of debugger operations, we used single-threaded programs to simplify the challenges of multi-threaded debugging. However, in real-world scenarios, our programs are often multi-threaded.
 
-我们的调试器必须具备多线程调试的能力，这里有几类场景需要特别强调下：
+Our debugger must have the capability to debug multi-threaded programs. Here are some scenarios that need special emphasis:
 
-- 父子进程，在调试器实现过程中，跟踪父子进程和跟踪进程内的线程，实现技术上差别不大。
-  因为这是一款面向go调试器的书籍，所以我们只专注多线程调试。多进程调试我们会点一下，但是不会专门开一节来介绍。
-- 线程的创建时机问题，可能是在我们attach之前创建出来的，也可能是我们attach之后线程通过clone又新创建出来的。
-  - 对于进程已经创建的线程，我们需要具备枚举并且发起跟踪、切换不同线程跟踪的能力；
-  - 对于进程调试期间新创建的线程，我们需要具备即时感知线程创建，并提示用户选择跟踪哪个线程的能力，方便用户对感兴趣的事件进行观察。
+- Parent-child processes: In the implementation of the debugger, tracking parent-child processes and tracking threads within a process are technically similar.
+  Since this book is focused on Go debugging, we will only focus on multi-threaded debugging. Multi-process debugging will be mentioned but not covered in a dedicated section.
+- Thread creation timing: Threads may be created before we attach or after we attach, through the `clone` system call.
+  - For threads already created by the process, we need the ability to enumerate and initiate tracking, and switch between different threads for tracking.
+  - For threads created during the debugging process, we need the ability to immediately sense thread creation and prompt the user to choose which thread to track, facilitating observation of events of interest.
 
-本节我们就先看下如何跟踪新创建的线程，并获取新线程的tid并发起跟踪，下一节我们看下如何枚举已经创建的线程并选择性跟踪指定线程。
+In this section, we will first look at how to track newly created threads and obtain the new thread's TID to initiate tracking. In the next section, we will explore how to enumerate already created threads and selectively track specified threads.
 
-### 基础知识
+### Basic Knowledge
 
-newosproc创建一个新的线程（newproc创建一个新的goroutine)，是通过 `clone` 系统调用来完成的，
+Creating a new thread (or a new goroutine) is done through the `clone` system call. Here's how it works:
 
 ```go
-// clone创建线程时的克隆参数
+// Clone parameters for creating a thread
 const (
 	cloneFlags = _CLONE_VM | /* share memory */
 		_CLONE_FS | /* share cwd, etc */
@@ -29,7 +29,7 @@ const (
 		_CLONE_THREAD /* revisit - okay for now */
 )
 
-// 创建一个新的线程
+// Create a new thread
 func newosproc(mp *m) {
 	stk := unsafe.Pointer(mp.g0.stack.hi)
 	/*
@@ -59,12 +59,12 @@ func newosproc(mp *m) {
 func clone(flags int32, stk, mp, gp, fn unsafe.Pointer) int32
 ```
 
-上述clone函数定义的实现，在amd64架构中是这样实现的，clone函数实现 see go/src/runtime/sys_linux_amd64.s:
+The implementation of the `clone` function in the amd64 architecture is as follows, see `go/src/runtime/sys_linux_amd64.s`:
 
 ```go
- // int32 clone(int32 flags, void *stk, M *mp, G *gp, void (*fn)(void));
+// int32 clone(int32 flags, void *stk, M *mp, G *gp, void (*fn)(void));
 TEXT runtime·clone(SB),NOSPLIT,$0
-	MOVL	flags+0(FP), DI 	// 准备系统调用参数
+	MOVL	flags+0(FP), DI 	// Prepare system call parameters
 	MOVQ	stk+8(FP), SI
 	...
 
@@ -75,13 +75,13 @@ TEXT runtime·clone(SB),NOSPLIT,$0
 	MOVQ	fn+32(FP), R12
 	...
 
-	MOVL	$SYS_clone, AX 		// clone系统调用号
-	syscall				// 执行系统调用
+	MOVL	$SYS_clone, AX 		// Clone system call number
+	syscall				// Execute system call
 
 	// In parent, return.
 	CMPQ	AX, $0
 	JEQ	3(PC)
-	MOVL	AX, ret+40(FP)		// 父进程，返回clone出的新线程的tid
+	MOVL	AX, ret+40(FP)		// Parent process, return the TID of the new thread
 	RET
 
 	// In child, on new stack.
@@ -107,41 +107,41 @@ TEXT runtime·clone(SB),NOSPLIT,$0
 
 nog2:
 	// Call fn. This is the PC of an ABI0 function.
-	CALL	R12			// 新线程，初始化相关的gmp调度，开始执行线程函数mstart，
-					// clone参数中有个 abi.FuncPCABI0(mstart)
+	CALL	R12			// New thread, initialize related GMP scheduling, start executing the thread function mstart,
+					// clone parameter includes abi.FuncPCABI0(mstart)
 	...
 ```
 
-由此可知，其实只要tracee执行系统调用clone时，内核给我们一个通知就可以了，比如通过 `ptrace(PTRACE_SYSCALL, pid, ...)` ，这样tracee执行系统调用clone时，在enter syscall clone、exit syscall clone的位置会停下来，方便我们做点调试方面的工作，我们就可以读取此时RAX寄存器的值来判断当前系统调用号是不是 `__NR_clone` ，如果是，那说明执行了系统调用clone，我们就可以借此判断创建了一个新的线程。同样的可以在exit syscall的时候用类似的办法去获取新线程的tid信息。
+From this, we can see that as long as the tracee executes the `clone` system call, the kernel can notify us, for example, through `ptrace(PTRACE_SYSCALL, pid, ...)`. This way, when the tracee executes the `clone` system call, it will stop at the enter and exit points of the system call, allowing us to perform debugging tasks. We can read the value of the RAX register to determine if the current system call number is `__NR_clone`. If it is, it indicates that the `clone` system call was executed, and we can use this to determine that a new thread was created. Similarly, at the exit of the system call, we can use a similar method to obtain the TID information of the new thread.
 
-通过这个办法可以感知到tracee创建了新线程，这是一个办法，但是这个办法 `ptrace(PTRACE_SYSCALL, pid, ...)` 过于通用了，你还要懂点ABI调用惯例（比如寄存器分配来传来系统调用号、返回值信息），使用起来就没有那么方便。
+This method allows us to sense that the tracee has created a new thread. However, this method `ptrace(PTRACE_SYSCALL, pid, ...)` is too general, and you need to understand the ABI calling conventions (such as register allocation for system call numbers and return values), making it less convenient to use.
 
-还是有一个办法，就是在执行 `ptrace(PTRACE_ATTACH, pid, ...)` 的时候传递选项 `PTRACE_O_TRACECLONE` ，这个操作是专门为跟踪clone系统调用而设置的，而且事后可以通过
+There is another method: when executing `ptrace(PTRACE_ATTACH, pid, ...)`, pass the option `PTRACE_O_TRACECLONE`. This operation is specifically set for tracking the `clone` system call, and afterward, you can:
 
-1、tracer：run `ptrace(PTRACE_ATTACH, pid, NULL, PTRACE_O_TRACECLONE)`
-   该操作将使得tracee执行clone系统调用时，内核会给tracer发送一个SIGTRAP信号，通知有clone系统调用发生，新线程或者新进程被创建出来了
+1. **Tracer**: Run `ptrace(PTRACE_ATTACH, pid, NULL, PTRACE_O_TRACECLONE)`
+   This operation will cause the kernel to send a SIGTRAP signal to the tracer when the tracee executes the `clone` system call, notifying that a new thread or process has been created.
 
-2、tracer：需要主动去感知这个事件的发生，有两个办法：
-    - 通过信号处理函数去感知这个信号的发生；
-    - 通过waitpid()去感知到tracee的运行状态发生了改变，并通过waitpid返回的status来判断是否是PTRACE_EVENT_CLONE事件
-      see: `man 2 ptrace` 中关于选项 PTRACE_O_TRACECLONE 的说明。
+2. **Tracer**: Actively sense the occurrence of this event through two methods:
+   - Through a signal handler to sense the occurrence of this signal;
+   - Through `waitpid()` to sense that the tracee's running state has changed, and determine if it is a PTRACE_EVENT_CLONE event through the status returned by `waitpid`.
+     See: `man 2 ptrace` for details on the option `PTRACE_O_TRACECLONE`.
 
-3、tracer如果确定了是clone导致的以后，可以进一步通过 `newpid = ptrace(PTRACE_GETEVENTMSG, pid, ...)` 拿到新线程的pid信息。
+3. **Tracer**: If it is confirmed that it is due to `clone`, you can further obtain the new thread's PID information through `newpid = ptrace(PTRACE_GETEVENTMSG, pid, ...)`.
 
-4、拿到线程pid之后就可以去干其他事，比如默认会自动将新线程纳入跟踪，我们可以选择放行新线程，或者观察、控制新线程
+4. After obtaining the thread PID, you can proceed to do other things, such as automatically tracking the new thread by default, or choosing to release the new thread or observe and control it.
 
-> ps: 可能会偶尔混用pid、tid信息，对于线程，其实就是一个clone出来的LWP（轻量级进程，light weight process），但是当我想描述一个线程的ID时，应该用tid这个术语，而不是pid这个术语。但是因为某些函数调用参数的原因，我可能偶尔会写成一样的pid，比如attach一个线程的时候，传递的参数应该是tid，而非这个线程的pid，它俩的值也是不一样的。
+> Note: Occasionally, the terms PID and TID may be mixed. For threads, it is essentially a lightweight process (LWP) created by `clone`. However, when describing a thread's ID, the term TID should be used, not PID. Due to certain function call parameters, I may occasionally write them the same, such as when attaching a thread, the parameter should be TID, not the thread's PID, as their values are different.
 >
-> - 这个线程所属的进程pid，这样获取 `getpid()`
-> - 这个线程的线程tid（或者表述成对应的lwp的pid），通过这样获取 `syscall(SYS_gettid)`
+> - The PID of the process to which this thread belongs can be obtained with `getpid()`.
+> - The TID of this thread (or described as the corresponding LWP's PID) can be obtained with `syscall(SYS_gettid)`.
 
-第二种方法更容易理解和维护，设计实现时我们将采用第二种方法。但是由于第一种方法也非常有潜力，比如我们希望在调试时跟踪任意系统调用，我们就可以通过类似方法来实现，后面扩展阅读部分，我们也会单独一节对此进行进一步的介绍。
+The second method is easier to understand and maintain, and we will adopt it in our design and implementation. However, the first method also has potential, such as tracking arbitrary system calls during debugging, which we can implement using a similar approach. In the extended reading section, we will also introduce this further in a dedicated section.
 
-### 设计实现
+### Design Implementation
 
-这部分实现代码，详见 [hitzhangjie/golang-debugger-lessons](https://github.com/hitzhangjie/golang-debugger-lessons) / 20_trace_new_threads。
+The implementation code for this part can be found in [hitzhangjie/golang-debugger-lessons](https://github.com/hitzhangjie/golang-debugger-lessons) / 20_trace_new_threads.
 
-首先为了后面测试方便，我们先用C语言来实现一个多线程程序，程序逻辑很简单，就是每隔一段时间就创建个新线程，线程函数就是打印当前线程的pid，以及线程lwp的pid。
+First, for convenience in later testing, we will implement a multi-threaded program in C. The program logic is simple: it creates a new thread every few seconds, and the thread function prints the current thread's PID and the LWP's PID.
 
 ```c
 #include <stdio.h>
@@ -174,11 +174,11 @@ int main() {
     }
     sleep(15);
 }
-
 ```
 
-这个程序可以这样编译 `gcc -o fork fork.c -lpthread`，然后运行 `./fork` 进行测试，可以看看没有被调试跟踪的时候是个什么运行效果。
-然后我们再来看调试器部分的代码逻辑，这里主要是为了演示tracer（debugger）如何对多线程程序中新创建的线程进行感知，并能自动追踪，必要时还可以实现类似 gdb `set follow-fork-mode=child/parent/ask` 的调试效果呢。
+This program can be compiled with `gcc -o fork fork.c -lpthread`, and then run `./fork` for testing to see the running effect without debugging and tracking.
+
+Next, let's look at the debugger's code logic. This is mainly to demonstrate how the tracer (debugger) can sense newly created threads in a multi-threaded program and automatically track them, and if necessary, implement a debugging effect similar to gdb's `set follow-fork-mode=child/parent/ask`.
 
 ```go
 package main
@@ -261,13 +261,13 @@ func main() {
 	}
 
 	for {
-		// 放行主线程，因为每次主线程都会因为命中clone就停下来
+		// Release the main thread, as it will stop every time it hits clone
 		if err := syscall.PtraceCont(int(pid), 0); err != nil {
 			fmt.Fprintf(os.Stderr, "cont fail: %v\n", err)
 			os.Exit(1)
 		}
 
-		// 检查主线程状态，检查如果status是clone事件，则继续获取clone出的线程的lwp pid
+		// Check the main thread's status, and if the status is a clone event, continue to obtain the LWP PID of the cloned thread
 		var status syscall.WaitStatus
 		rusage := syscall.Rusage{}
 		_, err := syscall.Wait4(pid, &status, syscall.WSTOPPED|syscall.WCLONE, &rusage)
@@ -275,14 +275,14 @@ func main() {
 			fmt.Fprintf(os.Stderr, "wait4 fail: %v\n", err)
 			break
 		}
-		// 检查下状态信息是否是clone事件 (see `man 2 ptrace` 关于选项PTRACE_O_TRACECLONE的说明部分)
+		// Check if the status information is a clone event (see `man 2 ptrace` for details on the option PTRACE_O_TRACECLONE)
 		isclone := status>>8 == (syscall.WaitStatus(syscall.SIGTRAP) | syscall.WaitStatus(syscall.PTRACE_EVENT_CLONE<<8))
 		fmt.Fprintf(os.Stdout, "tracee stopped, tracee pid:%d, status: %s, trapcause is clone: %v\n",
 			pid,
 			status.StopSignal().String(),
 			isclone)
 
-		// 获取子线程对应的lwp的pid
+		// Obtain the LWP PID of the child thread
 		msg, err := syscall.PtraceGetEventMsg(int(pid))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "get event msg fail: %v\n", err)
@@ -290,12 +290,11 @@ func main() {
 		}
 		fmt.Fprintf(os.Stdout, "eventmsg: new thread lwp pid: %d\n", msg)
 
-		// 放行子线程继续执行
+		// Release the child thread to continue execution
 		_ = syscall.PtraceDetach(int(msg))
 
 		time.Sleep(time.Second * 2)
 	}
-
 }
 
 // checkPid check whether pid is valid process's id
@@ -315,14 +314,13 @@ func checkPid(pid int) bool {
 
 	return true
 }
-
 ```
 
-### 代码测试
+### Code Testing
 
-1、先看看testdata/fork.c，这个程序每隔一段时间就创建一个pthread线程出来
+1. First, let's look at `testdata/fork.c`. This program creates a pthread thread every few seconds.
 
-主线程、其他线程创建出来后都会打印该线程对应的pid、tid（这里的tid就是对应的lwp的pid）
+The main thread and other threads will print the PID and TID (where TID is the corresponding LWP's PID) of the thread.
 
 ```
 zhangjie🦀 testdata(master) $ ./fork 
@@ -338,7 +336,7 @@ process: 35573, thread: 36398
 ...
 ```
 
-2、我们同时观察 ./20_trace_new_threads `<上述fork程序进程pid> 的执行情况`
+2. We will simultaneously observe the execution of `./20_trace_new_threads <fork program process pid>`.
 
 ```
 zhangjie🦀 20_trace_new_threads(master) $ ./20_trace_new_threads 35573
@@ -369,18 +367,18 @@ eventmsg: new thread lwp pid: 36398
 ..
 ```
 
-3、20_trace_new_threads 每隔一段时间都会打印一个event msg: `<new thread LWP pid>`
+3. `20_trace_new_threads` prints an event message: `<new thread LWP pid>` every few seconds.
 
-结论就是，我们通过显示设置PtraceSetOptions(pid, syscall.PTRACE_O_TRACECLONE)后，恢复tracee执行，这样tracee执行起来后，当执行到clone系统调用时，就会触发一个TRAP，内核会给tracer发送一个SIGTRAP来通知tracee运行状态变化。然后tracer就可以检查对应的status数据，来判断是否是对应的clone事件。
+The conclusion is that by explicitly setting `PtraceSetOptions(pid, syscall.PTRACE_O_TRACECLONE)`, we can resume the tracee's execution. When the tracee executes the `clone` system call, it will trigger a TRAP, and the kernel will send a SIGTRAP to notify the tracer of the tracee's running state change. The tracer can then check the corresponding status data to determine if it is a clone event.
 
-如果是clone事件，我们可以继续通过syscall.PtraceGetEventMsg(...)来获取新clone出来的线程的LWP的pid。
+If it is a clone event, we can further obtain the LWP PID of the newly cloned thread through `syscall.PtraceGetEventMsg(...)`.
 
-检查是不是clone事件呢，参考 man 2 ptrace手册对选项PTRACE_O_TRACECLONE的介绍部分，有解释clone状况下的status值如何编码。
+To check if it is a clone event, refer to the `man 2 ptrace` manual for details on the option `PTRACE_O_TRACECLONE`, which explains how the status value is encoded in the case of a clone.
 
-4、另外设置了选项PTRACE_O_TRACECLONE之后，新线程会自动被trace，所以新线程也会被暂停执行，此时如果希望新线程恢复执行，我们需要显示将其syscall.PtraceDetach或者执行syscall.PtraceContinue操作来让新线程恢复执行。
+4. Additionally, after setting the option `PTRACE_O_TRACECLONE`, the new thread will automatically be traced, so the new thread will also be paused. If you want the new thread to resume execution, you need to explicitly call `syscall.PtraceDetach` or execute `syscall.PtraceContinue` to allow the new thread to resume execution.
 
-### 引申一下
+### Further Discussion
 
-至此，测试方法介绍完了，我们可以引申下，在我们这个测试的基础上我们可以提示用户，你想跟踪当前线程呢，还是想跟踪新线程呢？类似地这个在gdb调试多进程、多线程程序时时非常有用的，联想下gdb中的 `set follow-fork-mode` ，我们可以选择 parent、child、ask 中的一种，并且允许在调试期间在上述选项之间进行切换，如果我们提前规划好了，fork后要跟踪当前线程还是子线程（or进程），这个功能特性就非常的有用。
+With the testing method introduced, we can prompt the user: do you want to track the current thread or the new thread? This is similar to the very useful feature in gdb for debugging multi-process and multi-threaded programs, such as `set follow-fork-mode`. We can choose between `parent`, `child`, or `ask`, and allow switching between these options during debugging. If we plan ahead whether to track the current thread or the child thread (or process) after a fork, this feature will be very useful.
 
-dlv里面提供了一种不同的做法，它是通过threads来切换被调试的线程的，实际上go也不会暴漏线程变成api给开发者，大家大多数时候应该也用不到去显示跟踪clone新建线程后新线程的执行情况，所以应该极少像gdb set follow-fork-mode调试模式一样去使用。我们这里只是引申一下。
+Delve provides a different approach, allowing switching of the debugged thread through `threads`. In reality, Go does not expose thread-related APIs to developers, and most of the time, you should not need to explicitly track the execution of new threads after a clone. Therefore, it is rare to use it like gdb's `set follow-fork-mode` debugging mode. We are just extending the discussion here.

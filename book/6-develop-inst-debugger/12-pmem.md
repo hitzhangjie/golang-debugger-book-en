@@ -1,32 +1,32 @@
-## 查看进程状态(内存)
+## Viewing Process State (Memory)
 
-### 实现目标：pmem读取内存数据
+### Implementation Goal: pmem Memory Data Reading
 
-这一小节，我们来实现pmem命令，方便调试进程时查看进程内存数据。
+In this section, we will implement the pmem command to facilitate viewing process memory data during debugging.
 
-### 基础知识
+### Basic Knowledge
 
-我们知道，内存中的数据是一些0和1序列，要正确展示内存数据，我们需要关注下面这些基本事项：
+We know that data in memory is a sequence of 0s and 1s. To correctly display memory data, we need to pay attention to these basic considerations:
 
-- 0和1字节序列不是最终形态，数据是有类型的，我们要根据数据类型来解释内存中的数据；
-- 不同机器中数据存储是有字节序的，小端（低位数据在低地址）or 大端（低位数据在高地址）；
+- The sequence of 0s and 1s is not the final form; data has types, and we need to interpret the data in memory according to its data type;
+- Data storage in different machines has byte order: little-endian (lower bits at lower addresses) or big-endian (lower bits at higher addresses);
 
-pmem读取指定内存地址开始的一段数据，并按照指定字节数编组成一个整数，然后以二进制、八进制、十进制或者十六进制的形式打印出来。和常见的查看变量的操作 `print <var>` 不同的是，这里并没有考虑指定位置的数据是什么数据类型 （如一个 `struct{...}` ，`slice`，or `map`)。pmem类似gdb里面的 `x/fmt` 操作。
+pmem reads a segment of data starting from a specified memory address, groups it into integers according to the specified number of bytes, and prints it in binary, octal, decimal, or hexadecimal format. Unlike the common variable viewing operation `print <var>`, it doesn't consider what data type the data at the specified location is (such as a `struct{...}`, `slice`, or `map`). pmem is similar to the `x/fmt` operation in gdb.
 
-查看进程内存数据，需要通过 `ptrace(PTRACE_PEEKDATA,...)`操作来读取被调试进程的内存数据。
+To view process memory data, we need to use the `ptrace(PTRACE_PEEKDATA,...)` operation to read the memory data of the debugged process.
 
-### 代码实现
+### Code Implementation
 
-#### 第1步：实现进程内存数据读取
+#### Step 1: Implement Process Memory Data Reading
 
-首先，我们通过 `ptrace(PTRACE_PEEKDATA,...)` 系统调用实现对内存内数据的读取，每次读取的数据量可以由count和size计算得到：
+First, we implement memory data reading through the `ptrace(PTRACE_PEEKDATA,...)` system call. The amount of data read each time can be calculated from count and size:
 
-- size表示一个待读取并显示的数据项包括多少个字节；
-- count表示连续读取并显示多少个这样的数据项；
+- size represents how many bytes each data item to be read and displayed includes;
+- count represents how many such data items to read and display consecutively;
 
-比如一个int数据项可能包含4个字节，要显示8个int数则要指定 `-size=4 -count=8`。
+For example, an int data item might contain 4 bytes, and to display 8 int numbers, you would specify `-size=4 -count=8`.
 
-下面的程序读取内存数据，并以16进制数打印读取的字节数据。
+The following program reads memory data and prints the read byte data in hexadecimal format.
 
 **file: cmd/debug/pmem.go**
 
@@ -44,7 +44,7 @@ import (
 
 var pmemCmd = &cobra.Command{
 	Use:   "pmem ",
-	Short: "打印内存数据",
+	Short: "Print memory data",
 	Annotations: map[string]string{
 		cmdGroupKey: cmdGroupInfo,
 	},
@@ -84,11 +84,11 @@ var pmemCmd = &cobra.Command{
 
 func init() {
 	debugRootCmd.AddCommand(pmemCmd)
-	// 类似gdb的命令x/FMT，其中FMT=重复数字+格式化修饰符+size
-	pmemCmd.Flags().Uint("count", 16, "查看数值数量")
-	pmemCmd.Flags().String("fmt", "hex", "数值打印格式: b(binary), o(octal), x(hex), d(decimal), ud(unsigned decimal)")
-	pmemCmd.Flags().Uint("size", 4, "数值占用字节")
-	pmemCmd.Flags().String("addr", "", "读取的内存地址")
+	// Similar to gdb's x/FMT command, where FMT=repeat number+format modifier+size
+	pmemCmd.Flags().Uint("count", 16, "Number of values to view")
+	pmemCmd.Flags().String("fmt", "hex", "Value print format: b(binary), o(octal), x(hex), d(decimal), ud(unsigned decimal)")
+	pmemCmd.Flags().Uint("size", 4, "Bytes per value")
+	pmemCmd.Flags().String("addr", "", "Memory address to read")
 }
 
 func checkPmemArgs(count uint, format string, size uint, addr string) error {
@@ -112,13 +112,12 @@ func checkPmemArgs(count uint, format string, size uint, addr string) error {
 	_, err := strconv.ParseUint(addr, 0, 64)
 	return err
 }
-
 ```
 
-#### 第2步：判断字节序及数值解析
+#### Step 2: Determine Byte Order and Value Parsing
 
 ```go
-// 检测是否是小端字节序
+// Check if the system is little-endian
 func isLittleEndian() bool {
 	buf := [2]byte{}
 	*(*uint16)(unsafe.Pointer(&buf[0])) = uint16(0xABCD)
@@ -133,7 +132,7 @@ func isLittleEndian() bool {
 	}
 }
 
-// 将byteslice转成uint64数值，注意字节序
+// Convert byte slice to uint64 value, considering byte order
 func byteArrayToUInt64(buf []byte, isLittleEndian bool) uint64 {
 	var n uint64
 	if isLittleEndian {
@@ -149,9 +148,9 @@ func byteArrayToUInt64(buf []byte, isLittleEndian bool) uint64 {
 }
 ```
 
-#### 第3步：实现数据"类型"解析
+#### Step 3: Implement Data "Type" Parsing
 
-从内存中读取到的数据，应该按照每个数据项占用的字节数 `-size`以及要展示的进制 `-fmt` 对连续字节数据进行编组、解析。且需要考虑二进制、八进制、十进制、十六进制数展示时占用的终端列数问题，每行列数有限，使用不同的进制数情况下，每行适合展示的数字的数量不同。
+The data read from memory should be grouped and parsed according to the number of bytes per data item `-size` and the display format `-fmt`. We also need to consider the terminal column width issues when displaying binary, octal, decimal, and hexadecimal numbers. With limited columns per line, the number of numbers that can be displayed per line varies depending on the number system used.
 
 ```go
 package debug
@@ -159,14 +158,14 @@ package debug
 
 var pmemCmd = &cobra.Command{
 	Use:   "pmem ",
-	Short: "打印内存数据",
+	Short: "Print memory data",
 	Annotations: map[string]string{
 		cmdGroupKey: cmdGroupInfo,
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		...
   
-		// 该函数以美观的tab+padding对齐方式打印数据
+		// This function prints data with beautiful tab+padding alignment
 		s := prettyPrintMem(uintptr(readAt), buf, isLittleEndian(), format[0], int(size))
 		fmt.Println(s)
 
@@ -176,15 +175,16 @@ var pmemCmd = &cobra.Command{
 
 ...
 
-// prettyPrintMem 使用tabwriter控制对齐.
+// prettyPrintMem uses tabwriter to control alignment.
 //
-// 注意结合2、8、10、16进制的显示情况进行适当的格式化处理后，再予以显示，看起来更美观
+// Note that after appropriate formatting for binary, octal, decimal, and hexadecimal display,
+// the output will look more aesthetically pleasing
 func prettyPrintMem(address uintptr, memArea []byte, littleEndian bool, format byte, size int) string {
 
 	var (
-		cols      int 		// 不同进制数，每行展示的列数(如cols=4， 1 2 3 4)
-		colFormat string 	// 不同进制数，每列数字格式化方式（如%08b, 00000001)
-		colBytes  = size    // 每列数字占用字节数（如2, 需2个字节，考虑字节序）
+		cols      int 		// Number of columns per line for different number systems (e.g., cols=4, 1 2 3 4)
+		colFormat string 	// Format for each column number in different number systems (e.g., %08b, 00000001)
+		colBytes  = size    // Bytes per column number (e.g., 2, needs 2 bytes, considering byte order)
 
 		addrLen int
 		addrFmt string
@@ -248,18 +248,23 @@ func prettyPrintMem(address uintptr, memArea []byte, littleEndian bool, format b
 
 ```
 
-上面的代码读取内存数据逻辑不变，主要是添加了两部分逻辑：
+Read file: book/6-develop-inst-debugger/12-pmem.md
+Here is the English translation for the remainder of `12-pmem.md`, maintaining the structure, formatting, and technical accuracy:
 
-- 根据机器大小端字节序，对内存中读取到的数据进行正确解析，并转换成对应的数值；
-- 根据数值要显示的进制格式，结合2、8、16、10进制的宽度，通过fmt.Sprintf进行适当格式化，并结合tabwrite通过tab+padding对齐后输出；
+---
 
-至此pmem命令基本完成开发，我们来测试下pmem的执行情况。
+The above code keeps the memory reading logic unchanged, but mainly adds two parts:
 
-### 代码测试
+- Correctly parses the data read from memory according to the machine's endianness and converts it into the corresponding value;
+- Formats the value according to the display base (binary, octal, decimal, hexadecimal), and uses `tabwriter` for tab+padding alignment to output the result more aesthetically;
 
-#### 测试：内存数据读取
+With this, the development of the `pmem` command is basically complete. Let's test the execution of `pmem`.
 
-首先运行测试程序，获取其pid，然后运行 `godbg attach <pid>`跟踪目标进程，等调试会话就绪后，我们输入 `disass`查看下反汇编数据，显示有很多的 `int3`指令，其对应的字节数据是 `0xCC`，我们可以读取一字节该指令地址处的数据来快速验证pmem是否工作正常。
+### Code Testing
+
+#### Test: Memory Data Reading
+
+First, run a test program to get its pid, then run `godbg attach <pid>` to trace the target process. Once the debug session is ready, use `disass` to check the disassembly. You will see many `int3` instructions, whose corresponding byte data is `0xCC`. We can read one byte at the address of such an instruction to quickly verify if `pmem` works correctly.
 
 ```bash
 $ godbg attach 7764
@@ -283,13 +288,13 @@ read 4 bytes ok:cccccccc
 godbg> 
 ```
 
-可见，程序从指令地址0x4561e5先读取了1字节数据，即1个int3对应的16进制数0xCC，然后从相同地址处读取了4字节数据，即连续4个int3对应的16进制数0xCCCCCCC。
+As you can see, the program first reads 1 byte from address 0x4561e5, which is the hexadecimal 0xCC for one `int3` instruction, and then reads 4 bytes from the same address, which are four consecutive `int3` instructions corresponding to 0xCCCCCCCC.
 
-运行结果符合预期，说明pmem基本的内存数据读取功能正常。
+The results are as expected, indicating that the basic memory data reading function of `pmem` works correctly.
 
-#### 测试：数据"类型"解析
+#### Test: Data "Type" Parsing
 
-查看16进制数，每个16进制数分别为1字节、2字节，注意字节序为小端：
+View hexadecimal numbers, each as 1 byte or 2 bytes, note the little-endian byte order:
 
 ```bash
 godbg> pmem --addr 0x464fc3 --count 16 --fmt x --size 1
@@ -303,7 +308,7 @@ read 32 bytes ok:
 0x464fcb:   0xcccc   0xcccc   0xcccc   0xcccc   0xcccc   0xcccc   0x8bcc   0x247c 
 ```
 
-查看8进制数，每个8进制数分别为1字节、2字节，注意字节序为小端：
+View octal numbers, each as 1 byte or 2 bytes, note the little-endian byte order:
 
 ```bash
 godbg> pmem --addr 0x464fc3 --count 16 --fmt o --size 1
@@ -317,7 +322,7 @@ read 32 bytes ok:
 0x464fcb:   0146314   0146314   0146314   0146314   0146314   0146314   0105714   0022174
 ```
 
-查看2进制数，每个2进制数分别为1字节、2字节，注意字节序为小端：
+View binary numbers, each as 1 byte or 2 bytes, note the little-endian byte order:
 
 ```bash
 godbg> pmem --addr 0x464fc3 --count 16 --fmt b --size 1
@@ -335,7 +340,7 @@ read 32 bytes ok:
 0x464fcf:   1100110011001100   1100110011001100   1000101111001100   0010010001111100 
 ```
 
-最后，查看下10进制数，每个10进制数分别为1字节、2字节，注意字节序为小端：
+Finally, view decimal numbers, each as 1 byte or 2 bytes, note the little-endian byte order:
 
 ```bash
 godbg> pmem --addr 0x464fc3 --count 16 --fmt d --size 1
@@ -349,14 +354,14 @@ read 32 bytes ok:
 0x464fcb:   052428   052428   052428   052428   052428   052428   035788   009340 
 ```
 
-pmem命令可以正常解析不同fmt、不同size、大小端字节序的内存数据了。
+The `pmem` command can now correctly parse memory data of different formats, sizes, and endianness.
 
-运行结果符合预期，说明pmem数据读取、解析、展示功能均正常。
+The results are as expected, indicating that the data reading, parsing, and display functions of `pmem` all work correctly.
 
-> ps: 这里prettyPrintMem逻辑实际上取自当初贡献给 `go-delve/delve的examinemem(x)`命令。如您对字节序引起的数据转换感兴趣，可以对数据进行校验验证下正确性，通过16进制数据校验可能会更方便些。
+> ps: The logic of `prettyPrintMem` here is actually taken from the `examinemem(x)` command contributed to `go-delve/delve`. If you are interested in data conversion caused by endianness, you can verify the correctness of the data, and it may be more convenient to check with hexadecimal data.
 
-### 本文小结
+### Summary
 
-本文介绍了如何从指定内存地址读取数据，如何高效判断机器字节序，不同字节序下如何进行数值解析，并且以不同计数制进行格式化展示。这里我们还是用了go标准库中提供的一个好用的包tabwriter，它支持输出的数据按列对齐，使得输出更加清晰易读。
+This article introduced how to read data from a specified memory address, how to efficiently determine machine endianness, how to parse values under different endianness, and how to format and display them in different number systems. Here, we also used the handy `tabwriter` package from the Go standard library, which supports column-aligned output, making the output clearer and easier to read.
 
-在后续符号级调试环节，我们还需要实现打印任意变量值的功能，读取内存数据后我们还需要其他技术来帮助解析成对应的高级语言中的数据类型。接下来我们看看如何读取寄存器相关数据。
+In the subsequent symbol-level debugging section, we will also need to implement the function of printing arbitrary variable values. After reading memory data, we will need other techniques to help parse it into the corresponding data types in high-level languages. Next, let's see how to read register-related data.

@@ -1,12 +1,12 @@
-## 修改进程状态(寄存器)
+## Modifying Process State (Registers)
 
-### 实现目标：修改寄存器数据
+### Implementation Goal: Modifying Register Data
 
-在执行到断点后继续执行前，我们需要恢复PC-1处的指令数据，并且需要修改寄存器PC=PC-1。这里我们已经展示过如何读取并且修改寄存器数据了，但是它的修改动作是内置于continue调试命令中的。而我们这里需要的是一个通用的调试命令 `set <register> <value>` ，OK，我们确实需要一个这样的调试命令，尤其是对指令级调试器而言，指令的操作数不是立即数、内存地址，就是寄存器。我们将在 godbg 中实现这个修改任意寄存器的调试命令。但本节还是以具体案例来说明掌握这个操作的必要性以及掌握如何实现为主要目的。
+Before continuing execution after hitting a breakpoint, we need to restore the instruction data at PC-1 and modify the register PC=PC-1. We have already demonstrated how to read and modify register data, but its modification action is built into the `continue` debugging command. Here, we need a general debugging command `set <register> <value>`. OK, we indeed need such a debugging command, especially for instruction-level debuggers, where the operands of instructions are either immediate values, memory addresses, or registers. We will implement this debugging command to modify any register in `godbg`. However, this section will focus on explaining the necessity of mastering this operation and how to implement it through specific examples.
 
-### 代码实现
+### Code Implementation
 
-我们将先实现一个测试程序，该测试程序每隔1s打印一下进程pid，for-loop的循环条件是一个固定返回true的函数loop()，我们想通过修改寄存器的方式来篡改函数调用loop()的返回值来实现。
+We will first implement a test program that prints the process pid every 1 second. The loop condition of the for-loop is a function `loop()` that always returns true. We want to modify the return value of the function call `loop()` by changing the register value.
 
 ```go
 package main
@@ -34,7 +34,7 @@ func loop() bool {
 
 ```
 
-下面是我们写的调试程序，它首先attach被调试进程，然后提示我们获取并输入loop()函数调用的返回地址，然后它就会通过添加断点、运行到该断点位置，然后调整寄存器RAX的值（loop()返回值就存在RAX），再然后恢复执行，我们将看到程序跳出了循环。
+Below is the debugging program we wrote. It first attaches to the debugged process, then prompts us to obtain and input the return address of the `loop()` function call. It then adds a breakpoint, runs to that breakpoint location, adjusts the value of the RAX register (the return value of `loop()` is stored in RAX), and then resumes execution. We will see the program exit the loop.
 
 ```go
 package main
@@ -200,18 +200,17 @@ func checkPid(pid int) bool {
 
 ```
 
-### 代码测试
+### Code Testing
 
-测试方法：
+Testing method:
 
-1、首先我们准备一个测试程序，loop3.go，该程序每隔1s输出一下pid，循环由固定返回true的loop()函数控制
-   详见 `testdata/loop3.go`。
+1. First, we prepare a test program, `loop3.go`, which outputs the pid every 1 second, with the loop controlled by the `loop()` function that always returns true. See `testdata/loop3.go` for details.
 
-2、按照ABI调用惯例，这里的函数调用loop()的返回值会通过RAX寄存器返回，所以我们想在loop()函数调用返回后，通过修改RAX寄存器的值来篡改返回值为false。
+2. According to the ABI calling convention, the return value of the function call `loop()` will be returned through the RAX register. Therefore, we want to modify the return value to false by changing the value of the RAX register after the `loop()` function call returns.
 
-那我们先确定下loop()函数的返回地址，这个只要我们通过dlv调试器在loop3.go:13添加断点，然后disass，就可以确定返回地址为 0x4af15e。
+   We first determine the return address of the `loop()` function. This can be done by adding a breakpoint at `loop3.go:13` using the `dlv` debugger, then disassembling, and we can determine the return address as `0x4af15e`.
 
-确定完返回地址后我们即可detach tracee，恢复其执行。
+   After determining the return address, we can detach the tracee and resume its execution.
 
 ```bash
 (dlv) disass
@@ -231,7 +230,7 @@ TEXT main.main(SB) /home/zhangjie/debugger101/golang-debugger-lessons/testdata/l
 Would you like to kill the process? [Y/n] n
 ```
 
-3、如果我们不加干扰，loop3会每隔1s不停地输出pid信息。
+3. If we do not interfere, `loop3` will continuously output the pid information every 1 second.
 
 ```bash
 $ ./loop3
@@ -244,7 +243,7 @@ pid: 4946
 zhangjie🦀 testdata(master) $
 ```
 
-4、现在运行我们编写的调试工具 ./15_set_regs 4946,
+4. Now run our debugging tool `./15_set_regs 4946`.
 
 ```bash
 $ ./15_set_regs 4946
@@ -262,14 +261,14 @@ process 4946 stopped
 
 ===step3===: supposing change register RAX value from true to false
 before RAX=1
-after RAX=0                   <= 我们篡改了返回值为0
+after RAX=0                   <= we changed retvalue to zero
 ```
 
 ```bash
 ...
 pid: 4946
 pid: 4946
-pid: 4946                      <= 因为篡改了loop()的返回值为false，循环跳出，程序结束
+pid: 4946                      <= we changed retvalue, so loop stop
 zhangjie🦀 testdata(master) $
 ```
 
@@ -281,14 +280,15 @@ TEXT main.loop(SB) /home/zhangjie/debugger101/golang-debugger-lessons/testdata/l
 =>      loop3.go:20     0x4af264*       4883ec08        sub rsp, 0x8
         loop3.go:20     0x4af268        c644240700      mov byte ptr [rsp+0x7], 0x0
         loop3.go:21     0x4af26d        c644240701      mov byte ptr [rsp+0x7], 0x1
-        loop3.go:21     0x4af272        b801000000      mov eax, 0x1 <== 返回值是用eax来存的
+        loop3.go:21     0x4af272        b801000000      mov eax, 0x1 <== retvalue save in eax
         loop3.go:21     0x4af277        4883c408        add rsp, 0x8
         loop3.go:21     0x4af27b        5d              pop rbp
         loop3.go:21     0x4af27c        c3              ret
 ```
 
-至此，通过这个实例演示了如何设置寄存器值，我们将在 [hitzhangjie/godbg](https://github.com/hitzhangjie/godbg) 中实现godbg> `set reg value` 命令来修改寄存器值。
+Through this example, we have demonstrated how to set register values. We will implement the godbg> `set reg value` command in [hitzhangjie/godbg](https://github.com/hitzhangjie/godbg) to modify register values.
 
-### 本文小结
+### Summary
 
-本节我们也介绍了如何修改寄存器的值，也通过具体实例演示了通过修改寄存器来篡改函数返回值的案例，当然你如果对栈帧构成了解的够细致，结合读写寄存器、内存操作，也可以修改函数调用参数、返回地址。
+In this section, we introduced how to modify register values and demonstrated a case of tampering with function return values by modifying registers. Of course, if you have a thorough understanding of stack frame composition, combined with reading and writing registers and memory operations, you can also modify function call parameters and return addresses.
+

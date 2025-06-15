@@ -1,16 +1,16 @@
-## 动态断点
+## Dynamic Breakpoints
 
-### 实现目标：清空断点
+### Implementation Goal: Clearing All Breakpoints
 
-`clearall`命令的功能是为了快速移除所有断点，而不用通过 `clear -n <breakNo>`逐个删除断点，适合添加了很多断点想快速清理的场景。
+The `clearall` command is designed to quickly remove all breakpoints at once, rather than using `clear -n <breakNo>` to delete them one by one. This is particularly useful when you have added many breakpoints and want to clear them all quickly.
 
-### 代码实现
+### Code Implementation
 
-`clearall`的实现逻辑，和 `clear`逻辑差不多，相比较之下处理逻辑更简单点。
+The implementation logic of `clearall` is similar to that of `clear`, but the processing logic is simpler.
 
-> clearall  操作实现比较简单，我们没有在 [hitzhangjie/golang-debug-lessons](https://github.com/hitzhangjie/golang-debug-lessons) 中单独提供示例目录，而是在 [hitzhangjie/godbg](https://github.com/hitzhangjie/godbg) 中进行了实现，读者可以查看 godbg 的源码。
+> The clearall operation implementation is relatively simple. We haven't provided a separate example directory in [hitzhangjie/golang-debug-lessons](https://github.com/hitzhangjie/golang-debug-lessons), but instead implemented it in [hitzhangjie/godbg](https://github.com/hitzhangjie/godbg). Readers can check the godbg source code.
 >
-> TODO 代码示例可以优化一下, see: https://github.com/hitzhangjie/golang-debugger-book/issues/15
+> TODO Code example can be optimized, see: https://github.com/hitzhangjie/golang-debugger-book/issues/15
 
 **file: cmd/debug/clearall.go**
 
@@ -28,8 +28,8 @@ import (
 
 var clearallCmd = &cobra.Command{
 	Use:   "clearall <n>",
-	Short: "清除所有的断点",
-	Long:  `清除所有的断点`,
+	Short: "Clear all breakpoints",
+	Long:  `Clear all breakpoints`,
 	Annotations: map[string]string{
 		cmdGroupKey: cmdGroupBreakpoints,
 	},
@@ -39,12 +39,12 @@ var clearallCmd = &cobra.Command{
 		for _, brk := range breakpoints {
 			n, err := syscall.PtracePokeData(TraceePID, brk.Addr, []byte{brk.Orig})
 			if err != nil || n != 1 {
-				return fmt.Errorf("清空断点失败: %v", err)
+				return fmt.Errorf("failed to clear breakpoints: %v", err)
 			}
 		}
 
 		breakpoints = map[uintptr]*target.Breakpoint{}
-		fmt.Println("清空断点成功")
+		fmt.Println("All breakpoints cleared successfully")
 		return nil
 	},
 }
@@ -54,23 +54,23 @@ func init() {
 }
 ```
 
-### 代码测试
+### Code Testing
 
-首先运行一个待调试程序，获取其pid，然后通过 `godbg attach <pid>`调试目标进程，首先通过命令 `disass`显示汇编指令列表，然后执行 `b <locspec>`命令添加几个断点。
+First, run a program to be debugged, get its pid, then use `godbg attach <pid>` to debug the target process. First, use the `disass` command to display the assembly instruction list, then execute the `b <locspec>` command to add several breakpoints.
 
 ```bash
 godbg> b 0x4653af
 break 0x4653af
-添加断点成功
+Breakpoint added successfully
 godbg> b 0x4653b6
 break 0x4653b6
-添加断点成功
+Breakpoint added successfully
 godbg> b 0x4653c2
 break 0x4653c2
-添加断点成功
+Breakpoint added successfully
 ```
 
-这里我们执行了3次断点添加操作，`breakpoints`可以看到添加的断点列表：
+Here we executed 3 breakpoint addition operations. `breakpoints` shows the list of added breakpoints:
 
 ```bash
 godbg> breakpoints
@@ -79,21 +79,21 @@ breakpoint[2] 0x4653b6
 breakpoint[3] 0x4653c2 
 ```
 
-然后我们执行 `clearall`清空所有断点：
+Then we execute `clearall` to clear all breakpoints:
 
 ```bash
 godbg> clearall
 clearall 
-清空断点成功
+All breakpoints cleared successfully
 ```
 
-接下来再次执行 `breakpoints`查看剩余的断点：
+Next, execute `breakpoints` again to view the remaining breakpoints:
 
 ```bash
 godbg> bs
 godbg> 
 ```
 
-现在已经没有剩余断点了，我们的添加、清空断点的功能是正常的。
+Now there are no remaining breakpoints, and our breakpoint addition and clearing functionality is working correctly.
 
-OK ，截止到现在，我们已经实现了添加断点、列出断点、删除指定断点、清空断点的功能，但是我们还没有演示过断点的效果（执行到断点处停下来）。接下来我们就将实现step（执行1条指令）、continue（运行到断点处）操作。
+OK, up to this point, we have implemented the functionality for adding breakpoints, listing breakpoints, deleting specific breakpoints, and clearing all breakpoints. However, we haven't demonstrated the effect of breakpoints (stopping execution at the breakpoint location). Next, we will implement the step (execute one instruction) and continue (run until breakpoint) operations.
