@@ -1,5 +1,5 @@
-从本章开始，我们开始走进调试器开发。
+Starting from this chapter, we begin our journey into debugger development.
 
-本章，我们先分析一下一个调试器的功能性需求、非功能性续需求，然后给出一个可行的技术方案，最后我们给出一个调试器实现的雏形，并对源码进行简单的讲解。
+In this chapter, we will first analyze the functional and non-functional requirements of a debugger, then present a feasible technical solution, and finally provide a skeleton implementation of a debugger with a brief explanation of the source code.
 
-后续，我们基于该调试器雏形，一步一步实现我们的指令级调试、符号级调试相关的功能。
+Subsequently, we will build upon this debugger skeleton to implement instruction-level debugging and symbol-level debugging features step by step.
