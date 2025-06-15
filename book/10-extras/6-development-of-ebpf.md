@@ -1,366 +1,366 @@
-## eBPF技术的发展历程与未来展望
+## The Development History and Future Prospects of eBPF Technology
 
-### 1. eBPF诞生的问题背景
+### 1. The Problem Background of eBPF's Birth
 
-操作系统跟踪和监控一直是系统性能分析和故障排查的重要手段。在eBPF诞生之前，Linux系统中存在多种跟踪技术，但它们各自为政，缺乏统一性和灵活性：
+Operating system tracing and monitoring have always been crucial means for system performance analysis and troubleshooting. Before eBPF, Linux systems had various tracing technologies, but they operated independently, lacking unity and flexibility:
 
-#### 传统跟踪技术的局限
+#### Limitations of Traditional Tracing Technologies
 
-* **动态跟踪（kprobe/uprobe）** ：允许在内核或用户空间函数入口和返回处插入探针，但使用复杂且需要特殊工具链。
-* **静态跟踪（tracepoint）** ：内核中预定义的静态检测点，覆盖面有限。
-* **硬件性能计数器（PMC）** ：提供硬件级事件监控，但难以与软件层面事件关联。
-* **定时器抽样** ：如perf采样，开销大且可能错过关键事件。
+* **Dynamic Tracing (kprobe/uprobe)**: Allows inserting probes at kernel or user-space function entries and returns, but is complex to use and requires special toolchains.
+* **Static Tracing (tracepoint)**: Predefined static detection points in the kernel with limited coverage.
+* **Hardware Performance Counters (PMC)**: Provides hardware-level event monitoring but is difficult to correlate with software-level events.
+* **Timer Sampling**: Like perf sampling, has high overhead and may miss critical events.
 
-这些工具各自成体系，使用方式不统一，导致学习和使用成本高昂。更重要的是，它们大多数需要特权访问，无法提供细粒度的安全控制。
+These tools each had their own system, with inconsistent usage methods, leading to high learning and usage costs. More importantly, most required privileged access and couldn't provide fine-grained security control.
 
-#### 系统监控的痛点
+#### Pain Points in System Monitoring
 
-在云计算兴起的背景下，传统跟踪技术面临几个关键挑战：
+In the context of cloud computing's rise, traditional tracing technologies faced several key challenges:
 
-1. **性能开销** ：许多跟踪工具会引入显著的性能损耗，不适合生产环境。
-2. **安全隐患** ：部分工具需要root权限，可能导致系统不稳定或安全风险。
-3. **可扩展性** ：随着系统规模扩大，跟踪点数量激增，分析变得困难。
-4. **灵活性不足** ：很难根据特定需求定制跟踪行为。
+1. **Performance Overhead**: Many tracing tools introduced significant performance penalties, making them unsuitable for production environments.
+2. **Security Risks**: Some tools required root privileges, potentially causing system instability or security risks.
+3. **Scalability**: As system scale increased, the number of trace points surged, making analysis difficult.
+4. **Lack of Flexibility**: Difficulty in customizing tracing behavior for specific needs.
 
-正是在这一背景下，eBPF（extended Berkeley Packet Filter）技术应运而生。
+It was in this context that eBPF (extended Berkeley Packet Filter) technology emerged.
 
-### 2. eBPF系统的发展历程
+### 2. The Development History of eBPF System
 
-#### 初期：从BPF到eBPF
+#### Early Stage: From BPF to eBPF
 
-1992年，Steven McCanne和Van Jacobson在Lawrence Berkeley National Laboratory开发了原始的BPF（Berkeley Packet Filter），最初用于网络数据包过滤。它允许用户空间程序指定过滤条件，只接收感兴趣的数据包，大大提高了网络监控工具的效率。
+In 1992, Steven McCanne and Van Jacobson developed the original BPF (Berkeley Packet Filter) at Lawrence Berkeley National Laboratory, initially for network packet filtering. It allowed user-space programs to specify filtering conditions, receiving only packets of interest, greatly improving the efficiency of network monitoring tools.
 
-2014年，Alexei Starovoitov对BPF进行了重大改进，引入了eBPF（extended BPF）。这一改进扩展了BPF的功能，使其不再局限于网络数据包过滤，而是成为一个通用的内核内虚拟机。
+In 2014, Alexei Starovoitov made significant improvements to BPF, introducing eBPF (extended BPF). This enhancement expanded BPF's capabilities beyond network packet filtering, transforming it into a general-purpose in-kernel virtual machine.
 
-#### 关键里程碑
+#### Key Milestones
 
-##### Linux 3.15（2014年）：eBPF首次引入
+##### Linux 3.15 (2014): Initial eBPF Introduction
 
-* 增加了eBPF的基础架构，包括JIT（Just-In-Time）编译器
-* 扩展了指令集，支持更复杂的操作
+* Added eBPF infrastructure, including JIT (Just-In-Time) compiler
+* Extended instruction set, supporting more complex operations
 
-##### Linux 3.18（2014年）：kprobe支持
+##### Linux 3.18 (2014): kprobe Support
 
-* eBPF程序可以附加到kprobe上，实现动态内核跟踪
+* eBPF programs could be attached to kprobes, enabling dynamic kernel tracing
 
-##### Linux 4.1（2015年）：地图（Maps）功能
+##### Linux 4.1 (2015): Maps Feature
 
-* 引入了BPF Maps，作为eBPF程序与用户空间通信的数据结构
-* 使得数据存储和共享变得可能
+* Introduced BPF Maps as data structures for communication between eBPF programs and user space
+* Enabled data storage and sharing
 
-##### Linux 4.4（2016年）：tracepoint支持
+##### Linux 4.4 (2016): tracepoint Support
 
-* eBPF可以附加到静态tracepoint
-* 提供了更加稳定的跟踪接口
+* eBPF could be attached to static tracepoints
+* Provided more stable tracing interfaces
 
-##### Linux 4.7（2016年）：perf支持
+##### Linux 4.7 (2016): perf Support
 
-* 与Linux perf工具集成，提供更强大的性能分析能力
+* Integrated with Linux perf tool, providing more powerful performance analysis capabilities
 
-##### Linux 4.8（2016年）：XDP（eXpress Data Path）
+##### Linux 4.8 (2016): XDP (eXpress Data Path)
 
-* 引入高性能网络数据包处理技术
-* 数据包在到达常规网络栈之前就可被处理
+* Introduced high-performance network packet processing technology
+* Packets could be processed before reaching the regular network stack
 
-##### Linux 4.9（2016年）：BPF Type Format（BTF）初步支持
+##### Linux 4.9 (2016): Initial BPF Type Format (BTF) Support
 
-* 为eBPF程序提供更丰富的类型信息
-* 开始支持CO-RE（Compile Once, Run Everywhere）
+* Provided richer type information for eBPF programs
+* Began supporting CO-RE (Compile Once, Run Everywhere)
 
-##### Linux 4.10（2017年）：cgroup支持
+##### Linux 4.10 (2017): cgroup Support
 
-* 允许eBPF程序与cgroup结合，实现更细粒度的控制
+* Allowed eBPF programs to work with cgroups, enabling finer-grained control
 
-##### Linux 4.12（2017年）：硬件性能计数器（PMC）支持
+##### Linux 4.12 (2017): Hardware Performance Counter (PMC) Support
 
-* 支持硬件事件监控
+* Supported hardware event monitoring
 
-##### Linux 4.14（2017年）：uprobe支持
+##### Linux 4.14 (2017): uprobe Support
 
-* 允许eBPF程序附加到用户空间函数
-* 扩展了跟踪范围
+* Allowed eBPF programs to be attached to user-space functions
+* Extended tracing scope
 
-##### Linux 4.15（2018年）：socket支持
+##### Linux 4.15 (2018): socket Support
 
-* 增强了网络相关功能
+* Enhanced network-related functionality
 
-##### Linux 4.18（2018年）：BPF to BPF函数调用
+##### Linux 4.18 (2018): BPF to BPF Function Calls
 
-* 允许eBPF程序之间互相调用，提高了代码复用能力
+* Allowed eBPF programs to call each other, improving code reusability
 
-##### Linux 5.0（2019年）：原生结构化日志支持
+##### Linux 5.0 (2019): Native Structured Logging Support
 
-* 引入BPF_TRACE_PRINTK，简化了日志记录
+* Introduced BPF_TRACE_PRINTK, simplifying logging
 
-##### Linux 5.10（2020年）：完整的BTF支持
+##### Linux 5.10 (2020): Complete BTF Support
 
-* 完善了BTF元数据，增强了CO-RE能力
+* Perfected BTF metadata, enhancing CO-RE capabilities
 
-##### Linux 5.13（2021年）：BPF LSM（Linux Security Module）
+##### Linux 5.13 (2021): BPF LSM (Linux Security Module)
 
-* 允许使用eBPF编写安全策略
+* Allowed writing security policies using eBPF
 
-#### 代表性工具和框架
+#### Representative Tools and Frameworks
 
-* **BCC（BPF Compiler Collection）** ：2015年推出，提供了一套用于创建eBPF程序的工具和库。
-* **bpftrace** ：2018年推出，提供了类似DTrace的高级脚本语言，简化了eBPF程序的开发。
-* **Cilium** ：2017年推出，基于eBPF的网络安全和可观察性解决方案。
-* **Falco** ：2016年推出，利用eBPF进行云原生应用安全监控。
-* **Hubble** ：2020年推出，为Kubernetes提供基于eBPF的网络可视化工具。
+* **BCC (BPF Compiler Collection)**: Launched in 2015, providing a set of tools and libraries for creating eBPF programs.
+* **bpftrace**: Launched in 2018, providing a high-level scripting language similar to DTrace, simplifying eBPF program development.
+* **Cilium**: Launched in 2017, an eBPF-based network security and observability solution.
+* **Falco**: Launched in 2016, using eBPF for cloud-native application security monitoring.
+* **Hubble**: Launched in 2020, providing eBPF-based network visualization tools for Kubernetes.
 
-#### 教训与突破
+#### Lessons and Breakthroughs
 
-##### 案例1：Netflix的性能优化之旅
+##### Case 1: Netflix's Performance Optimization Journey
 
-Netflix在2016年采用eBPF进行性能分析，发现了一个长期存在但难以检测的TCP缓冲区问题。传统工具无法发现这一问题，因为它需要同时跟踪网络栈和应用层。eBPF帮助他们找出了系统瓶颈，提高了服务响应时间。
+In 2016, Netflix adopted eBPF for performance analysis and discovered a long-standing but difficult-to-detect TCP buffer issue. Traditional tools couldn't find this problem because it required simultaneous tracking of the network stack and application layer. eBPF helped them identify system bottlenecks and improve service response times.
 
-##### 案例2：Google的BPF安全漏洞
+##### Case 2: Google's BPF Security Vulnerability
 
-2017年，Google发现了一个eBPF验证器中的安全漏洞（CVE-2017-16995），该漏洞可以被利用来实现本地权限提升。这一事件促使了eBPF安全模型的全面审查，最终导致了更加严格的验证机制。
+In 2017, Google discovered a security vulnerability in the eBPF verifier (CVE-2017-16995) that could be exploited for local privilege escalation. This incident prompted a comprehensive review of eBPF's security model, ultimately leading to stricter verification mechanisms.
 
-##### 案例3：Facebook的网络优化
+##### Case 3: Facebook's Network Optimization
 
-Facebook（现为Meta）在2018年利用eBPF的XDP功能构建了DDoS防御系统。之前，他们的网络防御系统需要专用硬件。采用eBPF后，他们能够在标准服务器上实现高效的DDoS防御，显著降低了成本。
+Facebook (now Meta) built a DDoS defense system in 2018 using eBPF's XDP functionality. Previously, their network defense system required dedicated hardware. With eBPF, they could implement efficient DDoS defense on standard servers, significantly reducing costs.
 
-### 3. 分布式系统时代的eBPF挑战与机遇
+### 3. eBPF Challenges and Opportunities in the Distributed Systems Era
 
-#### 微服务架构的挑战
+#### Microservices Architecture Challenges
 
-随着微服务架构的普及，应用程序分解为多个相互通信的小型服务，这为监控和跟踪带来了新的挑战：
+With the rise of microservices architecture, applications are decomposed into multiple small services communicating with each other, bringing new challenges for monitoring and tracing:
 
-1. **服务间通信** ：难以追踪跨服务请求的完整路径。
-2. **根因分析** ：故障可能源于多个服务之间的复杂交互。
-3. **性能开销** ：传统监控工具可能对轻量级服务造成过大的性能影响。
+1. **Inter-service Communication**: Difficulty in tracking complete paths of cross-service requests.
+2. **Root Cause Analysis**: Failures may originate from complex interactions between multiple services.
+3. **Performance Overhead**: Traditional monitoring tools may impose excessive performance impact on lightweight services.
 
-eBPF在这方面有独特优势：
+eBPF has unique advantages in this regard:
 
-* **低开销** ：eBPF程序直接在内核中执行，减少了上下文切换。
-* **细粒度洞察** ：可以跟踪网络、系统调用、应用程序等各个层面。
-* **安全性** ：验证器确保eBPF程序不会崩溃或无限循环。
+* **Low Overhead**: eBPF programs execute directly in the kernel, reducing context switches.
+* **Fine-grained Insights**: Can track various levels including network, system calls, and applications.
+* **Security**: Verifier ensures eBPF programs won't crash or infinite loop.
 
-#### 云原生环境的应用
+#### Cloud-Native Environment Applications
 
-在Kubernetes等云原生环境中，eBPF正在重塑可观察性和网络安全：
+In cloud-native environments like Kubernetes, eBPF is reshaping observability and network security:
 
-##### 网络策略实施
+##### Network Policy Implementation
 
-* **Cilium** ：利用eBPF实现Kubernetes网络策略，提供比传统iptables更高效的网络隔离。
-* **性能优势** ：相比传统的iptables，eBPF可以实现更高的吞吐量和更低的延迟。
+* **Cilium**: Implements Kubernetes network policies using eBPF, providing more efficient network isolation than traditional iptables.
+* **Performance Advantages**: Compared to traditional iptables, eBPF can achieve higher throughput and lower latency.
 
-##### 服务网格
+##### Service Mesh
 
-* **eBPF基础的Service mesh** ：替代传统的基于Sidecar的方案，减少了资源开销。
-* **例如** ：Cilium的Hubble提供了服务网格功能，无需额外的代理。
+* **eBPF-based Service Mesh**: Replaces traditional sidecar-based solutions, reducing resource overhead.
+* **Example**: Cilium's Hubble provides service mesh functionality without additional proxies.
 
-##### 安全监控
+##### Security Monitoring
 
-* **系统调用监控** ：检测异常行为，如权限升级尝试。
-* **运行时安全** ：实时监控容器行为，确保符合安全策略。
+* **System Call Monitoring**: Detects abnormal behavior, such as privilege escalation attempts.
+* **Runtime Security**: Real-time monitoring of container behavior, ensuring compliance with security policies.
 
-#### 可能的发展方向
+#### Potential Development Directions
 
-1. **eBPF作为内核可编程性的统一接口** ：
+1. **eBPF as a Unified Interface for Kernel Programmability**:
 
-* 简化内核扩展开发
-* 降低新功能引入的风险
+* Simplifies kernel extension development
+* Reduces risks in introducing new features
 
-1. **跨平台支持** ：
+2. **Cross-platform Support**:
 
-* 扩展到非Linux系统
-* 目前已有Windows eBPF项目
+* Extension to non-Linux systems
+* Currently has Windows eBPF project
 
-1. **硬件加速** ：
+3. **Hardware Acceleration**:
 
-* 利用SmartNIC等专用硬件加速eBPF程序
-* 降低CPU开销
+* Utilizing specialized hardware like SmartNIC to accelerate eBPF programs
+* Reducing CPU overhead
 
-1. **自动问题检测与修复** ：
+4. **Automatic Problem Detection and Repair**:
 
-* 利用eBPF构建自动化故障检测系统
-* 实现自愈功能
+* Building automated fault detection systems using eBPF
+* Implementing self-healing capabilities
 
-#### 应用潜力
+#### Application Potential
 
-1. **负载均衡** ：
+1. **Load Balancing**:
 
-* 高性能的L4/L7负载均衡器
-* 动态调整流量分配
+* High-performance L4/L7 load balancers
+* Dynamic traffic distribution adjustment
 
-1. **可观察性** ：
+2. **Observability**:
 
-* 深入了解应用性能和行为
-* 跨服务追踪
+* Deep insights into application performance and behavior
+* Cross-service tracing
 
-1. **安全增强** ：
+3. **Security Enhancement**:
 
-* 实时入侵检测
-* 零信任网络实现
+* Real-time intrusion detection
+* Zero-trust network implementation
 
-1. **网络优化** ：
+4. **Network Optimization**:
 
-* 智能路由
-* 流量整形
+* Intelligent routing
+* Traffic shaping
 
-### 4. 人工智能时代的eBPF
+### 4. eBPF in the AI Era
 
-随着人工智能和机器学习的快速发展，eBPF面临新的机遇和挑战。
+With the rapid development of artificial intelligence and machine learning, eBPF faces new opportunities and challenges.
 
-#### AI工作负载的监控与优化
+#### AI Workload Monitoring and Optimization
 
-AI工作负载与传统应用有很大不同，它们往往:
+AI workloads differ significantly from traditional applications, often:
 
-* 需要大量的计算资源
-* 有复杂的内存访问模式
-* 依赖专用的硬件加速器（如GPU、TPU）
+* Requiring massive computational resources
+* Having complex memory access patterns
+* Relying on specialized hardware accelerators (like GPUs, TPUs)
 
-eBPF可以通过以下方式优化AI工作负载：
+eBPF can optimize AI workloads through:
 
-1. **资源利用率监控** ：
+1. **Resource Utilization Monitoring**:
 
-* 实时跟踪GPU/TPU使用情况
-* 监控内存带宽消耗
+* Real-time tracking of GPU/TPU usage
+* Monitoring memory bandwidth consumption
 
-1. **IO优化** ：
+2. **IO Optimization**:
 
-* 识别数据加载瓶颈
-* 优化存储访问模式
+* Identifying data loading bottlenecks
+* Optimizing storage access patterns
 
-1. **智能调度** ：
+3. **Intelligent Scheduling**:
 
-* 根据工作负载特性动态分配资源
-* 优化多租户环境中的资源共享
+* Dynamically allocating resources based on workload characteristics
+* Optimizing resource sharing in multi-tenant environments
 
-#### AI与eBPF协同优化
+#### AI and eBPF Collaborative Optimization
 
-另一个有前景的方向是利用AI来优化eBPF程序本身：
+Another promising direction is using AI to optimize eBPF programs themselves:
 
-1. **自动化程序生成** ：
+1. **Automated Program Generation**:
 
-* 使用AI生成特定场景的eBPF程序
-* 简化开发流程
+* Using AI to generate eBPF programs for specific scenarios
+* Simplifying development processes
 
-1. **异常检测** ：
+2. **Anomaly Detection**:
 
-* 利用机器学习模型分析eBPF收集的数据
-* 自动发现异常模式
+* Using machine learning models to analyze data collected by eBPF
+* Automatically discovering abnormal patterns
 
-1. **预测性维护** ：
+3. **Predictive Maintenance**:
 
-* 基于历史数据预测系统问题
-* 提前采取措施防止故障
+* Predicting system issues based on historical data
+* Taking preventive measures before failures occur
 
-#### 跨领域应用
+#### Cross-domain Applications
 
-eBPF与AI的结合将为多个领域带来变革：
+eBPF's combination with AI will bring changes to multiple fields:
 
-1. **自动驾驶系统** ：
+1. **Autonomous Driving Systems**:
 
-* 实时监控车载系统性能
-* 确保关键组件的可靠性
+* Real-time monitoring of vehicle system performance
+* Ensuring reliability of key components
 
-1. **边缘计算** ：
+2. **Edge Computing**:
 
-* 在资源受限的设备上优化AI推理
-* 减少网络延迟和带宽消耗
+* Optimizing AI inference on resource-constrained devices
+* Reducing network latency and bandwidth consumption
 
-1. **医疗设备** ：
+3. **Medical Devices**:
 
-* 监控关键医疗系统的性能和安全
-* 确保医疗AI应用的可靠性
+* Monitoring performance and security of critical medical systems
+* Ensuring reliability of medical AI applications
 
-#### 未来发展方向
+#### Future Development Directions
 
-1. **eBPF加速器** ：
+1. **eBPF Accelerator**:
 
-* 专用硬件加速eBPF程序执行
-* 降低处理开销
+* Dedicated hardware to accelerate eBPF program execution
+* Reducing processing overhead
 
-1. **统一的可观察性框架** ：
+2. **Unified Observability Framework**:
 
-* 整合系统、应用和AI模型的监控
-* 提供端到端的性能分析
+* Integrating system, application, and AI model monitoring
+* Providing end-to-end performance analysis
 
-1. **自适应安全** ：
+3. **Adaptive Security**:
 
-* 基于AI和eBPF构建自适应安全系统
-* 动态调整安全策略
+* Building adaptive security systems based on AI and eBPF
+* Dynamically adjusting security strategies
 
-1. **量子计算准备** ：
+4. **Quantum Computing Preparation**:
 
-* 扩展eBPF以支持量子计算环境
-* 为量子-经典混合系统提供监控能力
+* Extending eBPF to support quantum computing environment
+* Providing monitoring capabilities for quantum-classical hybrid systems
 
-1. **AI工作流优化** ：
+5. **AI Workflow Optimization**:
 
-* 利用eBPF优化AI训练和推理流程
-* 提高资源利用率和能效
+* Utilizing eBPF to optimize AI training and inference processes
+* Improving resource utilization and energy efficiency
 
-### 5. 总结与展望（续）
+### 5. Summary and Future Prospects (Continued)
 
-#### 当前价值
+#### Current Value
 
-* **统一的可观察性** ：eBPF提供了一个统一的框架，整合了动态跟踪、静态跟踪和硬件监控等多种技术，使系统可观察性变得更加全面和一致。
-* **安全增强** ：通过细粒度的访问控制和安全验证，eBPF可以在不牺牲安全性的前提下提供强大的系统可观察性和网络控制能力。
-* **性能优化** ：eBPF程序直接在内核中执行，避免了频繁的上下文切换，大大降低了监控和网络处理的开销。
-* **灵活性** ：开发者可以编写自定义的eBPF程序，满足特定场景的需求，而不需要修改内核代码或加载内核模块。
+* **Unified Observability**: eBPF provides a unified framework that integrates various technologies such as dynamic tracing, static tracing, and hardware monitoring, making system observability more comprehensive and consistent.
+* **Security Enhancement**: By providing fine-grained access control and security verification, eBPF can offer strong system observability and network control capabilities without sacrificing security.
+* **Performance Optimization**: eBPF programs execute directly in the kernel, avoiding frequent context switches and greatly reducing monitoring and network processing overhead.
+* **Flexibility**: Developers can write custom eBPF programs to meet specific scenario needs without modifying kernel code or loading kernel modules.
 
-#### 未来展望
+#### Future Prospects
 
-随着技术的不断发展，eBPF的应用前景将更加广阔：
+As technology continues to develop, eBPF's application prospects will become even broader:
 
-1. **全栈可观察性** ：
+1. **Full Stack Observability**:
 
-* 从硬件到应用层的全方位监控
-* 实时数据分析和问题诊断
+* Comprehensive monitoring from hardware to application layer
+* Real-time data analysis and problem diagnosis
 
-1. **网络现代化** ：
+2. **Network Modernization**:
 
-* 替代传统的网络栈组件
-* 更高效的协议实现和路由决策
+* Replacing traditional network stack components
+* More efficient protocol implementation and routing decision
 
-1. **安全革新** ：
+3. **Security Innovation**:
 
-* 从被动检测到主动防御
-* 细粒度的安全策略执行
+* Moving from passive detection to active defense
+* Fine-grained security policy execution
 
-1. **云原生生态整合** ：
+4. **Cloud-Native Ecosystem Integration**:
 
-* 与Kubernetes、服务网格等更深入的集成
-* 成为云原生基础设施的核心组件
+* More in-depth integration with Kubernetes, service mesh, etc.
+* Becoming a core component of cloud-native infrastructure
 
-1. **跨平台标准化** ：
+5. **Cross-platform Standardization**:
 
-* 扩展到更多操作系统和平台
-* 建立统一的接口标准
+* Extension to more operating systems and platforms
+* Establishing a unified interface standard
 
-#### 面临的挑战
+#### Challenges
 
-尽管eBPF前景广阔，但仍面临一些挑战：
+Although eBPF has a broad future, it still faces some challenges:
 
-1. **学习曲线** ：
+1. **Learning Curve**:
 
-* 复杂的概念和编程模型
-* 需要深入理解内核机制
+* Complex concepts and programming models
+* Needing a deep understanding of kernel mechanisms
 
-1. **调试困难** ：
+2. **Debugging Difficulties**:
 
-* 内核级别的调试比用户空间更复杂
-* 错误处理机制有限
+* Kernel-level debugging is more complex than user space
+* Limited error handling mechanisms
 
-1. **版本兼容性** ：
+3. **Version Compatibility**:
 
-* 不同内核版本支持的功能差异
-* CO-RE机制仍在完善中
+* Differences in supported features between different kernel versions
+* CO-RE mechanism still in development
 
-1. **生态系统成熟度** ：
+4. **Ecosystem Maturity**:
 
-* 工具链和开发环境尚需改进
-* 社区支持和文档体系建设
+* Toolchain and development environment still need improvement
+* Community support and documentation system construction
 
-#### 结语
+#### Conclusion
 
-eBPF代表了Linux系统可编程性的未来方向。通过提供一个安全、高效、灵活的执行环境，eBPF正在重新定义我们与操作系统内核交互的方式。从网络数据包过滤到全面的系统可观察性，从简单的计数器到复杂的安全策略执行，eBPF已经证明了其作为系统扩展机制的强大潜力。
+eBPF represents the future direction of Linux system programmability. By providing a secure, efficient, and flexible execution environment, eBPF is redefining how we interact with the operating system kernel. From network packet filtering to comprehensive system observability, from simple counters to complex security policy execution, eBPF has proven its strong potential as a system extension mechanism.
 
-在分布式系统、云原生和人工智能的推动下，eBPF将继续演进，为解决现代计算环境中的挑战提供创新解决方案。随着社区的不断壮大和技术的持续完善，eBPF有望成为未来操作系统设计和实现的核心组成部分，为系统可观察性、网络和安全领域带来更多突破。
+Under the impetus of distributed systems, cloud-native, and artificial intelligence, eBPF will continue to evolve, providing innovative solutions to challenges in modern computing environments. With the continuous growth of the community and the improvement of technology, eBPF is expected to become a core component of future operating system design and implementation, bringing more breakthroughs to system observability, network, and security fields.
 
-无论是系统管理员、开发人员还是安全专家，都应该关注eBPF技术的发展，掌握这一强大工具，以应对日益复杂的IT环境挑战。eBPF不仅是一项技术创新，更是一种全新的系统交互范式，它将继续重塑我们构建、监控和保护计算系统的方式。
+Whether it's system administrators, developers, or security experts, they should pay attention to the development of eBPF technology, grasp this powerful tool, and respond to the increasingly complex IT environment challenges. eBPF is not only a technological innovation but also a new system interaction paradigm that will continue to reshape how we build, monitor, and protect computing systems.
