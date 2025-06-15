@@ -1,9 +1,9 @@
-## 致谢
+## Acknowledgments
 
-一路走来，收获过成功，也遭遇过失败，感谢父母一直做我坚强的后盾，即便在未知面前，他们的鼓励也总能给我无穷的信心，让我能够走出迷雾。
+Throughout this journey, I have experienced both success and failure. I am grateful to my parents for being my strong support system. Even in the face of uncertainty, their encouragement has always given me infinite confidence to navigate through the fog.
 
-感谢我的妻子，容忍我在家庭生活中的偷懒，容忍我无数次放鸽子来写这些东西。没有她的包容、理解、照顾、鼓励，我可能也不会坚持到现在。
+I would like to thank my wife for tolerating my neglect of family life and my countless broken promises while writing this book. Without her tolerance, understanding, care, and encouragement, I might not have persevered until now.
 
-也感谢朋友、同事、其他贡献者的支持、鼓励。
+I also want to express my gratitude to friends, colleagues, and other contributors for their support and encouragement.
 
-最后，我也要感谢自己，感谢自己对价值的探索、追求和坚持。
+Finally, I want to thank myself for the exploration, pursuit, and persistence of value.

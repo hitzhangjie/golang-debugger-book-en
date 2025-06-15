@@ -1,219 +1,222 @@
-## 扩展阅读：Go编译器简介
+## Extended Reading: Introduction to the Go Compiler
 
-`cmd/compile` 包含构成Go编译器的主要包。编译器逻辑上可分为四个阶段，我们将简要描述每个阶段，并列出包含其代码的包列表。
+`cmd/compile` contains the main packages that make up the Go compiler. The compiler can be logically divided into four phases, and we will briefly describe each phase and list the packages containing their code.
 
-您可能听到过"前端（front-end）"和"后端（back-end）"这两个术语。粗略地说，它们对应我们列出的前两个阶段和后两个阶段。第三个术语"中端（middle-end）"通常指第二阶段中进行的大部分工作。
+You may have heard the terms "front-end" and "back-end". Roughly speaking, they correspond to the first two phases and the last two phases we list. A third term, "middle-end", typically refers to most of the work done in the second phase.
 
-请注意，`go/*` 系列包（如 `go/parser` 和 `go/types`）主要由编译器内部API使用。由于编译器最初是用C语言编写的，`go/*` 包被开发用于编写处理Go代码的工具（如 `gofmt` 和 `vet`）。然而，随着时间推移，编译器的内部API已逐渐演变为更符合 `go/*` 包用户的习惯。
+Note that the `go/*` series of packages (such as `go/parser` and `go/types`) are primarily used by the compiler's internal API. Since the compiler was originally written in C, the `go/*` packages were developed for writing tools that process Go code (like `gofmt` and `vet`). However, over time, the compiler's internal API has gradually evolved to be more in line with the habits of `go/*` package users.
 
-需要澄清的是，"gc"代表"Go编译器"，与表示垃圾回收的大写"GC"无关。
+To clarify, "gc" stands for "Go compiler" and is unrelated to the uppercase "GC" that represents garbage collection.
 
-### 1. 解析（Parsing）
+### 1. Parsing
 
-* `cmd/compile/internal/syntax`（词法分析器、语法分析器、语法树）
+* `cmd/compile/internal/syntax` (lexer, parser, syntax tree)
 
-编译的第一阶段将源代码进行分词（词法分析）、解析（语法分析），并为每个源文件构建语法树。
+The first phase of compilation tokenizes (lexical analysis) and parses (syntax analysis) the source code, building a syntax tree for each source file.
 
-每个语法树都是相应源文件的精确表示，节点对应源代码的各种元素（如表达式、声明和语句）。语法树还包含位置信息，用于错误报告和调试信息生成。
+Each syntax tree is an exact representation of the corresponding source file, with nodes corresponding to various elements of the source code (such as expressions, declarations, and statements). The syntax tree also includes position information used for error reporting and debug information generation.
 
-### 2. 类型检查（Type checking）
+### 2. Type checking
 
-* `cmd/compile/internal/types2`（类型检查）
+* `cmd/compile/internal/types2` (type checking)
 
-`types2` 包是将 `go/types` 移植到使用 `syntax` 包的AST而非 `go/ast` 的版本。
+The `types2` package is a version of `go/types` ported to use the AST from the `syntax` package instead of `go/ast`.
 
-### 3. 中间表示构建（IR construction, "noding"）
+### 3. IR construction ("noding")
 
-* `cmd/compile/internal/types`（编译器类型）
-* `cmd/compile/internal/ir`（编译器AST）
-* `cmd/compile/internal/noder`（创建编译器AST）
+* `cmd/compile/internal/types` (compiler types)
+* `cmd/compile/internal/ir` (compiler AST)
+* `cmd/compile/internal/noder` (creating compiler AST)
 
-编译器中端使用自己的AST定义和Go类型表示（源自C语言版本）。类型检查后的下一步是将 `syntax` 和 `types2` 表示转换为 `ir` 和 `types`。此过程称为"noding"。
+The compiler's middle-end uses its own AST definition and Go type representation (derived from the C version). The next step after type checking is to convert the `syntax` and `types2` representations to `ir` and `types`. This process is called "noding".
 
-使用称为统一IR（Unified IR）的技术构建节点表示，该技术基于第2阶段类型检查代码的序列化版本。统一IR还参与包的导入导出和内联优化。
+The node representation is built using a technique called Unified IR, which is based on a serialized version of the type-checked code from phase 2. Unified IR also participates in package import/export and inlining optimizations.
 
-### 4. 中端优化（Middle end）
+### 4. Middle-end optimizations
 
-* `cmd/compile/internal/inline`（函数调用内联）
-* `cmd/compile/internal/devirtualize`（已知接口方法调用的虚函数消除）
-* `cmd/compile/internal/escape`（逃逸分析）
+* `cmd/compile/internal/inline` (function call inlining)
+* `cmd/compile/internal/devirtualize` (devirtualization of known interface method calls)
+* `cmd/compile/internal/escape` (escape analysis)
 
-对IR表示执行多个优化过程：
+Multiple optimization processes are performed on the IR representation:
 
-- 死代码消除
-- （早期）虚函数消除
-- 函数调用内联
-- 逃逸分析
+- Dead code elimination
+- (Early) devirtualization
+- Function call inlining
+- Escape analysis
 
-早期死代码消除集成在统一IR写入阶段。
+Early dead code elimination is integrated into the Unified IR writing phase.
 
-### 5. 遍历（Walk）
+### 5. Walk
 
-* `cmd/compile/internal/walk`（求值顺序、解糖）
+* `cmd/compile/internal/walk` (evaluation order, desugaring)
 
-对IR表示的最后一步处理是"walk"，其作用包括：
+The final processing step for the IR representation is "walk", which:
 
-1. 将复杂语句分解为简单语句，引入临时变量并保持求值顺序（也称为"order"阶段）
-2. 将高级Go构造解糖为原始形式。例如：
-   - `switch` 语句转换为二分查找或跳转表
-   - map和channel操作替换为运行时调用
+1. Breaks down complex statements into simple ones, introducing temporary variables and maintaining evaluation order (also known as the "order" phase)
+2. Desugars high-level Go constructs into primitive forms. For example:
+   - `switch` statements are converted to binary search or jump tables
+   - map and channel operations are replaced with runtime calls
 
-### 6. 通用SSA（Generic SSA）
+### 6. Generic SSA
 
-* `cmd/compile/internal/ssa`（SSA传递和规则）
-* `cmd/compile/internal/ssagen`（将IR转换为SSA）
+* `cmd/compile/internal/ssa` (SSA passes and rules)
+* `cmd/compile/internal/ssagen` (converting IR to SSA)
 
-在此阶段，IR被转换为静态单赋值（SSA）形式，这是一种具有特定属性的低级中间表示，便于实现优化和最终生成机器码。
+In this phase, the IR is converted to Static Single Assignment (SSA) form, a low-level intermediate representation with specific properties that facilitate optimization and final machine code generation.
 
-转换过程中应用函数内联（intrinsics）——编译器针对特定情况用高度优化的代码替换的特殊函数。某些节点也会降级为更简单的组件（例如 `copy` 内置函数替换为内存移动，`range` 循环重写为 `for` 循环）。出于历史原因，部分转换目前发生在SSA转换之前，但长期计划是将所有转换集中于此阶段。
+During the conversion, intrinsics are applied - special functions that the compiler replaces with highly optimized code for specific cases. Some nodes are also lowered to simpler components (e.g., the `copy` built-in function is replaced with memory moves, `range` loops are rewritten as `for` loops). For historical reasons, some conversions currently happen before SSA conversion, but the long-term plan is to centralize all conversions in this phase.
 
-随后执行一系列与机器无关的传递和规则，包括：
+This is followed by a series of machine-independent passes and rules, including:
 
-- 死代码消除
-- 删除冗余的空指针检查
-- 删除未使用的分支
+- Dead code elimination
+- Removal of redundant nil pointer checks
+- Removal of unused branches
 
-通用重写规则主要涉及表达式优化，例如用常量替换某些表达式，优化乘法和浮点运算。
+Generic rewrite rules mainly involve expression optimization, such as replacing certain expressions with constants, optimizing multiplication and floating-point operations.
 
-### 7. 生成机器码（Generating machine code）
+### 7. Generating machine code
 
-* `cmd/compile/internal/ssa`（SSA降级和架构相关传递）
-* `cmd/internal/obj`（机器码生成）
+* `cmd/compile/internal/ssa` (SSA lowering and architecture-specific passes)
+* `cmd/internal/obj` (machine code generation)
 
-编译器的机器相关阶段从"降级（lower）"传递开始，将通用值重写为其机器特定变体。例如，在amd64架构上允许内存操作数，因此许多加载-存储操作可以合并。
+The compiler's machine-specific phase begins with the "lower" pass, which rewrites generic values into their machine-specific variants. For example, on the amd64 architecture, memory operands are allowed, so many load-store operations can be combined.
 
-请注意，降级传递运行所有机器特定重写规则，因此当前也执行大量优化。
+Note that the lowering pass runs all machine-specific rewrite rules, so it currently also performs many optimizations.
 
-一旦SSA被"降级"并针对目标架构具体化，将运行最终代码优化传递，包括：
+Once the SSA is "lowered" and specialized for the target architecture, final code optimization passes are run, including:
 
-- 另一次死代码消除
-- 将值移近使用位置
-- 删除从未读取的局部变量
-- 寄存器分配
+- Another dead code elimination
+- Moving values closer to their use
+- Removing local variables that are never read
+- Register allocation
 
-此步骤的其他重要工作包括：
+Other important work in this step includes:
 
-- 栈帧布局（为局部变量分配栈偏移）
-- 指针存活分析（计算每个GC安全点上栈上指针的存活状态）
+- Stack frame layout (allocating stack offsets for local variables)
+- Pointer liveness analysis (computing the liveness state of stack pointers at each GC safe point)
 
-SSA生成阶段结束时，Go函数已转换为一系列 `obj.Prog` 指令。这些指令传递给汇编器（`cmd/internal/obj`），后者将其转换为机器码并输出最终目标文件。目标文件还将包含反射数据、导出数据和调试信息。
+At the end of the SSA generation phase, Go functions have been converted to a series of `obj.Prog` instructions. These instructions are passed to the assembler (`cmd/internal/obj`), which converts them to machine code and outputs the final object file. The object file will also contain reflection data, export data, and debug information.
 
-### 7a. 导出（Export）
+### 7a. Export
 
-除了为链接器编写目标文件外，编译器还为下游编译单元编写"导出数据"文件。导出数据包含编译包P时计算的以下信息：
+In addition to writing object files for the linker, the compiler also writes "export data" files for downstream compilation units. The export data contains the following information computed when compiling package P:
 
-- 所有导出声明的类型信息
-- 可内联函数的IR
-- 可能在其他包实例化的泛型函数的IR
-- 函数参数逃逸分析结果的摘要
+- Type information for all exported declarations
+- IR for inlinable functions
+- IR for generic functions that might be instantiated in other packages
+- Summary of function parameter escape analysis results
 
-导出数据格式经历多次迭代，当前版本称为"统一格式"（unified），它是对象图的序列化表示，带有允许延迟解码部分内容的索引（因为大多数导入仅用于提供少数符号）。
+The export data format has gone through several iterations, with the current version called "unified", which is a serialized representation of the object graph with indices that allow lazy decoding of parts of the content (since most imports are only used to provide a few symbols).
 
-GOROOT仓库包含统一格式的读取器和写入器；它从/向编译器的IR进行编码和解码。`golang.org/x/tools` 仓库也为导出数据读者提供公共API（使用 `go/types` 表示），始终支持编译器的当前文件格式和少量历史版本。（`x/tools/go/packages` 在需要类型信息但不需要带类型注释的语法模式中使用它。）
+The GOROOT repository contains readers and writers for the unified format; it encodes and decodes to/from the compiler's IR. The `golang.org/x/tools` repository also provides a public API for export data readers (using `go/types` representation), always supporting the compiler's current file format and a few historical versions. (`x/tools/go/packages` uses it when type information is needed but syntax patterns with type annotations are not.)
 
-`x/tools` 仓库还为使用旧版"索引格式"的导出类型信息（仅限类型信息）提供公共API。（例如，`gopls` 使用此版本存储工作区信息数据库，其中包括类型信息。）
+The `x/tools` repository also provides a public API for export type information (type information only) using the older "index format". (For example, `gopls` uses this version to store workspace information databases, which include type information.)
 
-导出数据通常提供"深度"摘要，因此编译包Q只需读取每个直接导入的导出数据文件，即可确保这些文件提供间接导入（如P的公共API中引用的类型的方法和结构字段）的所有必要信息。深度导出数据简化了构建系统，因为每个直接依赖只需要一个文件。然而，当处于大型仓库的导入图较高层时，这会导致导出数据膨胀：如果有常用类型具有大型API，几乎每个包的导出数据都会包含副本。这一问题推动了"索引"设计的发展，该设计允许按需部分加载。
+Export data typically provides "deep" summaries, so compiling package Q only needs to read the export data file for each direct import to ensure these files provide all necessary information for indirect imports (such as methods and struct fields of types referenced in P's public API). Deep export data simplifies the build system because each direct dependency only needs one file. However, when high in the import graph of a large repository, this leads to export data bloat: if there are common types with large APIs, almost every package's export data will contain copies. This issue drove the development of the "index" design, which allows partial loading on demand.
 
-### 8. 实用技巧
+### 8. Practical Tips
 
-#### 入门指南
+#### Getting Started
 
-* 如果您从未贡献过编译器，简单的方法是在感兴趣的位置添加日志语句或 `panic("here")` 以初步了解问题。
-* 编译器本身提供日志、调试和可视化功能：
+* If you've never contributed to the compiler, a simple approach is to add logging statements or `panic("here")` at interesting locations to get an initial understanding of the problem.
+* The compiler itself provides logging, debugging, and visualization capabilities:
   ```bash
-  $ go build -gcflags=-m=2                   # 打印优化信息（包括内联、逃逸分析）
-  $ go build -gcflags=-d=ssa/check_bce/debug # 打印边界检查信息
-  $ go build -gcflags=-W                     # 打印类型检查后的内部解析树
-  $ GOSSAFUNC=Foo go build                   # 为函数Foo生成ssa.html文件
-  $ go build -gcflags=-S                     # 打印汇编代码
-  $ go tool compile -bench=out.txt x.go      # 打印编译器阶段的计时信息
+  $ go build -gcflags=-m=2                   # Print optimization information (including inlining, escape analysis)
+  $ go build -gcflags=-d=ssa/check_bce/debug # Print bounds check information
+  $ go build -gcflags=-W                     # Print internal parse tree after type checking
+  $ GOSSAFUNC=Foo go build                   # Generate ssa.html file for function Foo
+  $ go build -gcflags=-S                     # Print assembly code
+  $ go tool compile -bench=out.txt x.go      # Print timing information for compiler phases
   ```
-* 部分标志会改变编译器行为，例如：
+* Some flags change compiler behavior, for example:
   ```bash
-  $ go tool compile -h file.go               # 遇到第一个编译错误时恐慌
-  $ go build -gcflags=-d=checkptr=2          # 启用额外的unsafe指针检查
+  $ go tool compile -h file.go               # Panic on first compilation error
+  $ go build -gcflags=-d=checkptr=2          # Enable additional unsafe pointer checks
   ```
-* 更多标志详情可通过以下方式获取：
+* More flag details can be obtained via:
   ```bash
-  $ go tool compile -h              # 查看编译器标志（如 -m=1 -l）
-  $ go tool compile -d help         # 查看调试标志（如 -d=checkptr=2）
-  $ go tool compile -d ssa/help     # 查看SSA标志（如 -d=ssa/prove/debug=2）
-  ```
-#### 测试修改
-
-* 请务必阅读 [快速测试修改](https://go.dev/doc/contribute#quick_test) 部分。
-* 部分测试位于 `cmd/compile` 包内，可通过 `go test ./...` 运行，但许多测试位于顶级 [test](https://github.com/golang/go/tree/master/test) 目录：
-
-  ```bash
-  $ go test cmd/internal/testdir                           # 运行'test'目录所有测试
-  $ go test cmd/internal/testdir -run='Test/escape.*.go'   # 运行特定模式的测试
+  $ go tool compile -h              # View compiler flags (like -m=1 -l)
+  $ go tool compile -d help         # View debug flags (like -d=checkptr=2)
+  $ go tool compile -d ssa/help     # View SSA flags (like -d=ssa/prove/debug=2)
   ```
 
-  详情参见 [testdir README](https://github.com/golang/go/tree/master/test#readme)。
-  `testdir_test.go` 中的 `errorCheck` 方法有助于解析测试中使用的 `ERROR` 注释。
-* 新的 [基于应用的覆盖率分析](https://go.dev/testing/coverage/) 可用于编译器：
+#### Testing Changes
+
+* Be sure to read the [Quick Testing Changes](https://go.dev/doc/contribute#quick_test) section.
+* Some tests are in the `cmd/compile` package and can be run with `go test ./...`, but many tests are in the top-level [test](https://github.com/golang/go/tree/master/test) directory:
 
   ```bash
-  $ go install -cover -coverpkg=cmd/compile/... cmd/compile  # 构建带覆盖率检测的编译器
-  $ mkdir /tmp/coverdir                                      # 选择覆盖率数据存放位置
-  $ GOCOVERDIR=/tmp/coverdir go test [...]                   # 使用编译器并保存覆盖率数据
-  $ go tool covdata textfmt -i=/tmp/coverdir -o coverage.out # 转换为传统覆盖率格式
-  $ go tool cover -html coverage.out                         # 通过传统工具查看覆盖率
+  $ go test cmd/internal/testdir                           # Run all tests in the 'test' directory
+  $ go test cmd/internal/testdir -run='Test/escape.*.go'   # Run tests matching a pattern
   ```
-#### 处理编译器版本
 
-* 许多编译器测试使用 `$PATH` 中的 `go` 命令及其对应的 `compile` 二进制文件。
-* 如果您在分支中且 `$PATH` 包含 `<go-repo>/bin`，执行 `go install cmd/compile` 将使用分支代码构建编译器，并安装到正确位置，以便后续 `go` 命令使用新编译器。
-* [toolstash](https://pkg.go.dev/golang.org/x/tools/cmd/toolstash) 提供保存、运行和恢复Go工具链已知良好版本的功能。例如：
+  See the [testdir README](https://github.com/golang/go/tree/master/test#readme) for details.
+  The `errorCheck` method in `testdir_test.go` helps parse the `ERROR` comments used in tests.
+* The new [application-based coverage analysis](https://go.dev/testing/coverage/) can be used with the compiler:
+
+  ```bash
+  $ go install -cover -coverpkg=cmd/compile/... cmd/compile  # Build compiler with coverage instrumentation
+  $ mkdir /tmp/coverdir                                      # Choose location for coverage data
+  $ GOCOVERDIR=/tmp/coverdir go test [...]                   # Use compiler and save coverage data
+  $ go tool covdata textfmt -i=/tmp/coverdir -o coverage.out # Convert to traditional coverage format
+  $ go tool cover -html coverage.out                         # View coverage with traditional tools
+  ```
+
+#### Handling Compiler Versions
+
+* Many compiler tests use the `go` command in `$PATH` and its corresponding `compile` binary.
+* If you're in a branch and `$PATH` includes `<go-repo>/bin`, running `go install cmd/compile` will build the compiler using the branch code and install it in the correct location for subsequent `go` commands to use the new compiler.
+* [toolstash](https://pkg.go.dev/golang.org/x/tools/cmd/toolstash) provides functionality to save, run, and restore known good versions of the Go toolchain. For example:
 
   ```bash
   $ go install golang.org/x/tools/cmd/toolstash@latest
   $ git clone https://go.googlesource.com/go
   $ cd go
   $ git checkout -b mybranch
-  $ ./src/all.bash               # 构建并确认良好起点
+  $ ./src/all.bash               # Build and confirm good starting point
   $ export PATH=$PWD/bin:$PATH
-  $ toolstash save               # 保存当前工具链
+  $ toolstash save               # Save current toolchain
   ```
 
-  之后编辑/编译/测试循环类似：
-
-  ```bash
-  <... 修改cmd/compile源码 ...>
-  $ toolstash restore && go install cmd/compile   # 恢复已知良好工具链构建编译器
-  <... 'go build', 'go test', etc. ...>           # 使用新编译器进行测试
-  ```
-* `toolstash` 还允许比较已安装与存储版本的编译器，例如验证重构后行为一致性：
+  The edit/compile/test cycle after that is similar:
 
   ```bash
-  $ toolstash restore && go install cmd/compile   # 构建最新编译器
-  $ go build -toolexec "toolstash -cmp" -a -v std # 比较新旧编译器生成的std库
+  <... modify cmd/compile source ...>
+  $ toolstash restore && go install cmd/compile   # Restore known good toolchain and build compiler
+  <... 'go build', 'go test', etc. ...>           # Test with new compiler
   ```
-* 如果版本不同步（例如出现 `linked object header mismatch` 错误），可执行：
+* `toolstash` also allows comparing the installed compiler with the stored version, for example to verify behavior consistency after refactoring:
+
+  ```bash
+  $ toolstash restore && go install cmd/compile   # Build latest compiler
+  $ go build -toolexec "toolstash -cmp" -a -v std # Compare std library generated by old and new compilers
+  ```
+* If versions are out of sync (e.g., `linked object header mismatch` error), you can run:
 
   ```bash
   $ toolstash restore && go install cmd/...
   ```
-#### 其他有用的工具
 
-* [compilebench](https://pkg.go.dev/golang.org/x/tools/cmd/compilebench) 用于基准测试编译器速度。
-* [benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat) 是报告编译器修改性能变化的标准工具：
+#### Other Useful Tools
+
+* [compilebench](https://pkg.go.dev/golang.org/x/tools/cmd/compilebench) is used for benchmarking compiler speed.
+* [benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat) is the standard tool for reporting performance changes from compiler modifications:
   ```bash
-  $ go test -bench=SomeBenchmarks -count=20 > new.txt   # 使用新编译器测试
-  $ toolstash restore                                   # 恢复旧编译器
-  $ go test -bench=SomeBenchmarks -count=20 > old.txt   # 使用旧编译器测试
-  $ benchstat old.txt new.txt                           # 对比结果
+  $ go test -bench=SomeBenchmarks -count=20 > new.txt   # Test with new compiler
+  $ toolstash restore                                   # Restore old compiler
+  $ go test -bench=SomeBenchmarks -count=20 > old.txt   # Test with old compiler
+  $ benchstat old.txt new.txt                           # Compare results
   ```
-* [bent](https://pkg.go.dev/golang.org/x/benchmarks/cmd/bent) 可方便地在Docker容器中运行社区Go项目的基准测试集。
-* [perflock](https://github.com/aclements/perflock) 通过控制CPU频率等手段提高基准测试一致性。
-* [view-annotated-file](https://github.com/loov/view-annotated-file) 可将内联、边界检查和逃逸信息叠加显示在源代码上。
-* [godbolt.org](https://go.godbolt.org) 广泛用于查看和分享汇编输出，支持比较不同Go编译器版本的汇编代码。
+* [bent](https://pkg.go.dev/golang.org/x/benchmarks/cmd/bent) makes it easy to run benchmark suites from community Go projects in Docker containers.
+* [perflock](https://github.com/aclements/perflock) improves benchmark consistency by controlling CPU frequency and other means.
+* [view-annotated-file](https://github.com/loov/view-annotated-file) can overlay inlining, bounds check, and escape information on source code.
+* [godbolt.org](https://go.godbolt.org) is widely used to view and share assembly output, supporting comparison of assembly code from different Go compiler versions.
 
 ---
 
-### 进阶阅读
+### Further Reading
 
-如需深入了解SSA包的工作原理（包括其传递和规则），请参阅 [cmd/compile/internal/ssa/README.md](internal/ssa/README.md)。
+For a deeper understanding of how the SSA package works (including its passes and rules), see [cmd/compile/internal/ssa/README.md](internal/ssa/README.md).
 
-如果本文档介绍或SSA README有任何不清楚之处，或您有改进建议，请在 [issue 30074](https://go.dev/issue/30074) 中留言。
+If anything in this document or the SSA README is unclear, or if you have suggestions for improvements, please leave a comment in [issue 30074](https://go.dev/issue/30074).

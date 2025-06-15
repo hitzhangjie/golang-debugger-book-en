@@ -1,64 +1,64 @@
-## Appendix: 使用 git bisect 定位引入bug的commit
+## Appendix: Using git bisect to locate the commit that introduced a bug
 
-`git bisect` 是一个非常有用的工具，用于在大型代码库中快速定位引起特定错误或功能变化的具体提交。它通过二分查找算法，将可能包含问题的提交范围逐步缩小，从而帮助开发者更快地找到引入bug的那个commit。
+`git bisect` is a very useful tool for quickly locating the specific commit that caused a particular error or feature change in a large codebase. It uses a binary search algorithm to gradually narrow down the range of commits that might contain the issue, helping developers find the commit that introduced the bug more quickly.
 
-下面是一个使用 `git bisect` 搜索引入bug的commit的示例。这个例子假设你已经知道一个特定版本没有问题（比如标签v1.0），而后续的一个版本有问题（比如最新的master分支）：
+Here's an example of using `git bisect` to search for the commit that introduced a bug. This example assumes you know that a specific version is working fine (e.g., tag v1.0), while a later version has issues (e.g., the latest master branch):
 
-### 步骤 1: 开始bisect
+### Step 1: Start bisect
 
-首先，你需要从有已知错误的状态开始bisect搜索：
+First, you need to start the bisect search from a known bad state:
 
 ```bash
 git bisect start
 ```
 
-### 步骤 2: 指定没有问题的提交点
+### Step 2: Specify a good commit
 
-指定一个你确信没有任何问题的特定版本（这可以是标签、分支或具体的commit hash）：
-
-```bash
-git bisect good v1.0   # 假设v1.0是一个好的状态，没有bug。
-```
-
-### 步骤 3: 指定有问题的提交点
-
-接着指定一个你确信存在问题的版本（这同样可以是标签、分支或具体的commit hash）：
+Specify a version that you're certain has no issues (this can be a tag, branch, or specific commit hash):
 
 ```bash
-git bisect bad master   # 假设master是最新的开发分支，并且包含已知bug。
+git bisect good v1.0   # Assuming v1.0 is a good state with no bugs.
 ```
 
-### 步骤 4: 编译并测试
+### Step 3: Specify a bad commit
 
-Git会自动切换到两个指定提交之间的某个中间点（通过二分法来选择）。你需要在这个版本上进行编译和测试，以确认当前的代码是否有问题：
+Then specify a version that you're certain has issues (this can also be a tag, branch, or specific commit hash):
 
 ```bash
-make      # 假设你的构建命令是 make。
-./test_program    # 运行自定义脚本来检查是否存在bug。
+git bisect bad master   # Assuming master is the latest development branch and contains the known bug.
 ```
 
-### 步骤 5: 反馈测试结果给git bisect
+### Step 4: Compile and test
 
-在执行了编译和测试之后，你必须告知 `git bisect` 当前的提交是否包含问题：
+Git will automatically switch to a middle point between the two specified commits (chosen through binary search). You need to compile and test at this version to confirm whether the current code has issues:
 
-- 如果当前版本没有问题，则运行:
+```bash
+make      # Assuming your build command is make.
+./test_program    # Run a custom script to check if the bug exists.
+```
+
+### Step 5: Provide feedback to git bisect
+
+After performing the compilation and testing, you must tell `git bisect` whether the current commit contains the issue:
+
+- If the current version is good, run:
 
 ```bash
 git bisect good
 ```
 
-- 如果当前版本有问题，则运行:
+- If the current version is bad, run:
 
 ```bash
 git bisect bad
 ```
 
-### 步骤 6: 反复执行直到找到引入bug的commit
+### Step 6: Repeat until finding the commit that introduced the bug
 
-根据上述步骤反复进行，直到 `git` 找到引入bug的那个具体提交为止。当bisect结束时，它会打印出“首先被标记为错误”的提交信息。
+Repeat the above steps until `git` finds the specific commit that introduced the bug. When bisect ends, it will print the commit information that was "first marked as bad".
 
 ```bash
-# 最终会显示类似这样的内容：
+# It will eventually show something like this:
 ```
 
 bisect run failed:
@@ -73,14 +73,14 @@ Date:   Date of commit
 
 ```
 
-在这个示例中，`c94218e7b5d390a6c6eb7f3f7aaf5aa92e0bddd2` 就是引入bug的commit。
+In this example, `c94218e7b5d390a6c6eb7f3f7aaf5aa92e0bddd2` is the commit that introduced the bug.
 
-### 步骤 7: 完成bisect
-当你找到了引发问题的那个提交后，可以通过以下命令结束 bisect：
+### Step 7: Complete bisect
+After finding the commit that caused the issue, you can end the bisect with the following command:
 ```bash
 git bisect reset
 ```
 
-这会将你的工作区恢复到开始 `git bisect` 之前的最后一个分支或标签状态。至此，你就完成了使用 `git bisect` 来定位引入bug的commit的过程。
+This will restore your working directory to the last branch or tag state before starting `git bisect`. At this point, you have completed the process of using `git bisect` to locate the commit that introduced the bug.
 
-希望这个示例对你有所帮助！如果你有更多的问题或者需要进一步的帮助，请随时提问。
+Hope this example helps! If you have more questions or need further assistance, feel free to ask.

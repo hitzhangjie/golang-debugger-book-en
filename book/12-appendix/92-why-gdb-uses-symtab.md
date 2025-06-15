@@ -1,60 +1,60 @@
-## 扩展阅读：GDB为什么同时使用.symtab和DWARF
+## Extended Reading: Why Does GDB Use Both .symtab and DWARF?
 
-### **GDB 使用 `.symtab` 吗？**
+### **Does GDB use `.symtab`?**
 
-是的，它使用，而且是作为非常基础的依赖数据在使用。
+Yes, it does, and it is used as a very fundamental dependency.
 
-### 为什么使用 `.symtab`？
+### Why use `.symtab`?
 
-`.symtab` (符号表) 是 ELF (可执行和可链接格式) 文件的一个核心组成部分。它包含以下信息：
+`.symtab` (symbol table) is a core component of ELF (Executable and Linkable Format) files. It contains the following information:
 
-* **函数名：** 程序中函数的名称。这对于单步调试、设置断点和理解程序执行流程至关重要。
-* **变量名：** 全局和静态变量的名称。虽然 GDB *可以* 访问局部变量的信息（稍后会讲到），但 `.symtab` 提供了全局可访问变量的名称。
-* **符号地址：** 函数和变量在内存中的地址。这对于 GDB 在调试时定位它们是必需的。
-* **节信息：** 链接到包含代码和数据的 ELF 文件节的链接。
+* **Function names:** The names of functions in the program. This is crucial for stepping, setting breakpoints, and understanding program flow.
+* **Variable names:** The names of global and static variables. While GDB *can* access local variable information (explained later), `.symtab` provides the names of globally accessible variables.
+* **Symbol addresses:** The memory addresses of functions and variables. This is necessary for GDB to locate them during debugging.
+* **Section info:** Links to ELF file sections containing code and data.
 
-从历史上看，`.symtab` 是主要的调试信息来源。早期的调试器，包括最初的 GDB，都是围绕它构建的。它是一个相对简单且紧凑的数据结构。如果没有它，GDB 会受到严重限制——它无法有意义地表示程序的结构。
+Historically, `.symtab` was the main source of debugging information. Early debuggers, including the original GDB, were built around it. It is a relatively simple and compact data structure. Without it, GDB would be severely limited—it could not meaningfully represent the structure of a program.
 
-### 为什么不只用 DWARF 呢？
+### Why not just use DWARF?
 
-这是关键问题，答案是：**GDB *确实* 使用 DWARF 信息，但它并没有 *取代* `.symtab`。它们扮演着不同的、互补的角色。**
+This is the key question, and the answer is: **GDB *does* use DWARF information, but it does not *replace* `.symtab`. They play different, complementary roles.**
 
-让我们了解一下 DWARF：
+Let's understand DWARF:
 
-* **什么是 DWARF？** DWARF (Debugging With Attributed Record Format) 是一种标准化的调试信息格式。它比 `.symtab` 更加全面。它包含：
+* **What is DWARF?** DWARF (Debugging With Attributed Record Format) is a standardized debugging information format. It is much more comprehensive than `.symtab`. It includes:
 
-  * **局部变量信息：** 这是相对于 `.symtab` 的一个 *主要* 优势。`.symtab` 通常不存储函数内部的局部变量信息。
-  * **类型信息：** 关于变量和函数参数的数据类型细节。
-  * **行号信息：** 机器指令和源代码行之间的映射关系。这使得 GDB 能够显示你单步执行时对应的源代码行。
-  * **参数信息：** 函数参数的信息。
-  * **内联函数信息：** 关于内联函数的细节。
-* **为什么不能 *仅仅* 用 DWARF？**
+  * **Local variable information:** This is a *major* advantage over `.symtab`, which usually does not store information about local variables inside functions.
+  * **Type information:** Details about the data types of variables and function parameters.
+  * **Line number information:** Mapping between machine instructions and source code lines. This allows GDB to show the corresponding source line as you step through code.
+  * **Parameter information:** Information about function parameters.
+  * **Inline function information:** Details about inlined functions.
+* **Why can't we *just* use DWARF?**
 
-  * **大小和性能：** DWARF 信息会显著增加可执行文件或共享库的大小。这会影响磁盘空间、内存使用以及潜在的加载时间。虽然存在压缩技术，但仍然是一个需要考虑的因素。
-  * **兼容性：** 虽然 DWARF 是标准化的，但存在不同的版本和扩展。较旧的 GDB 版本可能无法完全支持所有 DWARF 功能。`.symtab` 是一个更通用的基础。
-  * **符号名称：** 虽然 DWARF *可以* 包含符号名称，但它通常不是存储它们的唯一地方。`.symtab` 仍然是可靠的函数和全局变量名称来源。有时，DWARF 可能会包含混杂或不易读懂的名称。
-  * **历史原因和兼容性：** GDB 的核心架构是围绕 `.symtab` 构建的。虽然它已经发展到高度依赖 DWARF，但完全放弃 `.symtab` 将是一个巨大的工程，并且会破坏与旧二进制文件的兼容性。
+  * **Size and performance:** DWARF information can significantly increase the size of executables or shared libraries. This affects disk space, memory usage, and potentially load times. Compression techniques exist, but it's still a consideration.
+  * **Compatibility:** While DWARF is standardized, there are different versions and extensions. Older GDB versions may not fully support all DWARF features. `.symtab` is a more universal foundation.
+  * **Symbol names:** While DWARF *can* include symbol names, it's not always the only place they're stored. `.symtab` remains a reliable source for function and global variable names. Sometimes, DWARF may contain mangled or less readable names.
+  * **Historical reasons and compatibility:** GDB's core architecture was built around `.symtab`. While it has evolved to rely heavily on DWARF, completely abandoning `.symtab` would be a huge undertaking and would break compatibility with older binaries.
 
-**### GDB如何同时使用二者**
+### How does GDB use both?
 
-**这里解释下GDB 如何同时使用两者：**
+**Here's how GDB uses both:**
 
-1. **初始加载：** GDB 首先使用 `.symtab` 获取基本的符号信息（函数名、地址）。
-2. **使用 DWARF 补充：** 然后，它使用 DWARF 获取更详细的调试信息（局部变量、类型、行号）。
-3. **结合使用：** 例如，当你单步执行时，GDB 使用 `.symtab` 找到函数地址，然后使用 DWARF 显示对应的源代码行。
+1. **Initial loading:** GDB first uses `.symtab` to get basic symbol information (function names, addresses).
+2. **DWARF for details:** Then, it uses DWARF to get more detailed debugging information (local variables, types, line numbers).
+3. **Combined usage:** For example, when you step through code, GDB uses `.symtab` to find function addresses, then uses DWARF to display the corresponding source code line.
 
-**现代 GDB 和 DWARF：**
+**Modern GDB and DWARF:**
 
-现代版本的 GDB（尤其是使用最新编译器编译的版本）高度依赖 DWARF。它提供的更丰富的调试信息显著改善了用户体验。但是，`.symtab` 仍然是一个关键的后备方案和基础元素。 很难想象 GDB 会在不久的将来完全放弃它。
+Modern versions of GDB (especially those built with the latest compilers) rely heavily on DWARF. The richer debugging information it provides greatly improves the user experience. However, `.symtab` is still a key fallback and foundational element. It's hard to imagine GDB completely abandoning it anytime soon.
 
-**总结：**
+**Summary:**
 
-| 特性               | `.symtab`                  | DWARF                                  |
-| ------------------ | ---------------------------- | -------------------------------------- |
-| **主要用途** | 基本符号信息（函数名、地址） | 详细的调试信息（局部变量、类型、行号） |
-| **大小**     | 较小                         | 较大                                   |
-| **兼容性**   | 非常高                       | 取决于版本                             |
-| **局部变量** | 无                           | 有                                     |
-| **类型信息** | 有限                         | 丰富                                   |
+| Feature            | `.symtab`                        | DWARF                                   |
+| ------------------ | -------------------------------- | --------------------------------------- |
+| **Main use**       | Basic symbol info (names, addrs) | Detailed debug info (locals, types, lines) |
+| **Size**           | Small                            | Large                                   |
+| **Compatibility**  | Very high                        | Depends on version                      |
+| **Locals**         | No                               | Yes                                     |
+| **Type info**      | Limited                          | Rich                                    |
 
-希望这个详细的解释能让读者更清楚地了解 GDB、`.symtab` 和 DWARF 之间的关系。
+I hope this detailed explanation helps clarify the relationship between GDB, `.symtab`, and DWARF.

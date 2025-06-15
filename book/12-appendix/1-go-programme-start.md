@@ -1,8 +1,8 @@
-# go runtime: go程序启动流程
+# go runtime: Go Program Startup Process
 
-## go程序启动流程概览
+## Overview of Go Program Startup Process
 
-我们使用如下源程序作为示例，来看一看go程序的启动过程:
+Let's examine the startup process of a Go program using the following source code as an example:
 
 **file: main.go**
 
@@ -16,7 +16,7 @@ func main() {
 }
 ```
 
-运行dlv进行调试，将程序执行到main.main处：
+Run dlv for debugging and execute the program until main.main:
 
 ```
 $ dlv debug main.go
@@ -35,7 +35,7 @@ Breakpoint 1 set at 0x10d0faf for main.main() ./main.go:5
 (dlv) 
 ```
 
-这个时候看一下调用堆栈：
+Let's look at the call stack:
 
 ```bash
 (dlv) bt
@@ -48,37 +48,36 @@ Breakpoint 1 set at 0x10d0faf for main.main() ./main.go:5
 (dlv) 
 ```
 
-由此可知go程序启动是按照如下流程启动的：
+From this, we can see that the Go program starts up in the following sequence:
 
 1. asm_amd64.s:1374 runtime·goexit:runtime·goexit1(SB)
 
 2. runtime/proc.go:204 runtime.main:fn()
+   Here, fn is the main.main from our test source program
 
-   这里的fn就是测试源程序中的main.main
+3. Now PC is stopped at main.main, waiting for us to continue debugging.
 
-3. 现在PC就停在main.main处，等待我们进行后续调试。
+## Pre-Startup Initialization
 
-## go程序启动前初始化
+Here we discuss the pre-startup initialization, which refers to the operations before our entry function main.main is executed. Understanding this part will help establish a global understanding of Go and strengthen our knowledge of implementing Go debuggers.
 
-这里我们讲的启动前初始化，指的是程序执行到我们的入口函数main.main之前的操作，理解这部分内容，将有助于建立对go的全局认识，也有助于加强对实现go调试器的认识。
+### Go Process Instantiation
 
-### go进程实例化
+When we type `./prog` in the shell, the operating system instantiates an instance of the prog program, and the process starts. What happens during this process?
 
-当我们在shell里面键入`./prog`时，操作系统为我们实例化了一个prog程序的实例，进程启动了，这个过程中发生了什么呢？
+- First, the shell forks a child process (let's call it child shell);
+- The child shell then replaces the process's code, data, etc., by executing execvp;
+- Once everything is ready, the operating system hands the prepared process state to the scheduler for execution;
 
-- shell中首先fork一个子进程，就称为子shell吧；
-- 子shell中再通过执行execvp替换掉进程待执行程序的代码、数据等等；
-- 一切准备就绪后，操作系统将准备好的进程状态交给调度器调度执行；
+Let's assume the current scheduler has selected our process and see what logic the Go process executes from startup.
 
-我们就假定当前调度器选中了当前进程，看下go进程从启动开始执行了什么逻辑。
+When compiling C programs, we know that a source program is first compiled into *.o files, then linked with system-provided shared libraries and startup code to form the final executable. Linking can be done through internal linkage (static linking) or external linkage (dynamic linking).
 
-在编译c程序的时候，我们知道一个源程序首先会被编译成*.o文件，然后同系统提供的共享库、系统提供的启动代码结合起来进行链接（link）之后，形成一个最终的可执行程序。链接的时候有internal linkage（静态链接）或者external linkage（动态链接）两种方式。
+Go programs are similar to C programs, with different linking methods. Refer to the `-linkmode` option description in `go tool link` for details. Typically, if there's no cgo, Go build by default produces internal linkage, which is why the size is slightly larger. This can be confirmed by checking the shared library dependencies with the system tool `ldd <prog>`, which will show an error `not dynamic executable`.
 
-go程序和c程序类似，也有不同的链接方式，参考`go tool link`中的`-linkmode`选项说明进行了解。通常情况下如果没有cgo，默认go build构建出来的都是internal linkage，所以其体积也稍大，通过系统工具`ldd <prog>`查看依赖的共享库会提示错误`not dynamic executable`也可以证实这点。
+### Go Process Startup Code
 
-### go进程启动代码
-
-go程序对应的进程开始执行之后，其首先要执行的指令就是启动代码，如下所示：
+After a Go program's process starts executing, its first instructions are the startup code, as shown below:
 
 **file: asm_amd64.s**
 
@@ -99,13 +98,13 @@ TEXT main(SB),NOSPLIT,$-8
 	JMP	runtime·rt0_go(SB)
 ```
 
-上述是go程序构建时分别采用internal、external linkage时使用的启动代码，go进程启动时将首先执行这段指令。第一种是首先为进程传递参数argc、argv，然后跳到`runtime.rt0_go(SB)`执行，第二种是说c启动代码在调用main之前会负责传递argc、argv，`runtime.rt0_go(SB)`。
+The above is the startup code used when building Go programs with internal and external linkage respectively. When a Go process starts, it will first execute these instructions. The first one passes the process arguments argc and argv, then jumps to `runtime.rt0_go(SB)` for execution. The second one indicates that the C startup code will be responsible for passing argc and argv before calling main, then `runtime.rt0_go(SB)`.
 
-就先不在linkmode对启动代码的影响这多做讨论了，直接看`runtime.rt0_go(SB)`。
+Let's not discuss the impact of linkmode on startup code further and directly look at `runtime.rt0_go(SB)`.
 
 ### `runtime.rt0_go(SB)`
 
-这里汇编代码篇幅过长，我们省去了大部分汇编代码，只保留了比较重要的步骤的说明。
+The assembly code here is quite lengthy, so we'll omit most of it and only keep the important steps.
 
 ```asm
 TEXT runtime·rt0_go(SB),NOSPLIT,$0
@@ -158,7 +157,7 @@ ok:
 	RET
 ```
 
-我们看到在完成上半部分的一些初始化之后，还做了这些操作：
+We can see that after completing some initialization in the first half, it also performs these operations:
 
 1. copy argc, copy argv
 2. call runtime·args(SB), call runtime·osinit(SB), call runtime·schedinit(SB)
@@ -168,9 +167,9 @@ ok:
    3. call runtime·newproc(SB)
 4. call runtime·mstart(SB)
 
-这些步骤就是我们关心的go程序启动的关键部分了，不妨一一来看下。
+These steps are the key parts of Go program startup that we're interested in. Let's look at them one by one.
 
-> ps：阅读go汇编，需要先阅读下相关的基础知识，可以参考下 [a quick guide to go's assembler](https://golang.org/doc/asm).
+> Note: To read Go assembly, you need to first read some basic knowledge. You can refer to [a quick guide to go's assembler](https://golang.org/doc/asm).
 >
 > - `FP`: Frame pointer: arguments and locals.
 > - `PC`: Program counter: jumps and branches.
@@ -183,7 +182,7 @@ ok:
 
 #### call runtime·args(SB)
 
-指的是runtime package下的args这个函数，总之就是设置argc、argv这些参数的。
+Refers to the args function in the runtime package, which sets up argc, argv, and other parameters.
 
 **file: runtime/runtime1.go**
 
@@ -197,7 +196,7 @@ func args(c int32, v **byte) {
 
 #### runtime·osinit(SB)
 
-指的是runtime package下的osinit这个函数，总之就是写系统设置相关的，先不关心。
+Refers to the osinit function in the runtime package, which handles system settings. We won't focus on this for now.
 
 **file: runtime/os_linux.go**
 
@@ -211,7 +210,7 @@ func osinit() {
 
 #### call runtime·schedinit(SB)
 
-指的是runtime package下的schedinit这个函数，做了一些调度执行前的准备。
+Refers to the schedinit function in the runtime package, which prepares for scheduling execution.
 
 ```go
 // The bootstrap sequence is:
@@ -223,14 +222,15 @@ func osinit() {
 //
 // The new G calls runtime·main.
 func schedinit() {
-	// lockInit Linux下为空操作
+	// lockInit is a no-op on Linux
     ...
 
 	// raceinit must be the first call to race detector.
 	// In particular, it must be done before mallocinit below calls racemapshadow.
     
     // @see https://github.com/golang/go/blob/master/src/runtime/HACKING.md
-    // 参考对getg()的解释：这里应该是在系统栈上运行，返回的_g_应该是当前M的g0
+    // Reference for getg() explanation: This should be running on the system stack, 
+    // the returned _g_ should be the g0 of the current M
 	_g_ := getg()
 	if raceenabled {
 		_g_.racectx, raceprocctx0 = raceinit()
@@ -270,9 +270,9 @@ func schedinit() {
 }
 ```
 
-#### 启动runtime.main & main.main
+#### Starting runtime.main & main.main
 
-好了，上面一大堆都是一些初始化的工作，现在看下runtime.main启动的最直接部分：
+After all the initialization work above, let's look at the most direct part of runtime.main startup:
 
 ```asm
 	// create a new goroutine to start program
@@ -287,14 +287,14 @@ func schedinit() {
 	CALL	runtime·mstart(SB)
 ```
 
-这里首先首先获取符号`$runtime.mainPC(SB)`的地址放入AX，这个其实是函数runtime.main的入口地址，然后压函数调用参数argsize 0，因为这个函数没有参数。
+Here, it first gets the address of the symbol `$runtime.mainPC(SB)` and puts it in AX. This is actually the entry address of the runtime.main function. Then it pushes the function call parameter argsize 0, because this function has no parameters.
 
 ```asm
 DATA	runtime·mainPC+0(SB)/8,$runtime·main(SB)
 GLOBL	runtime·mainPC(SB),RODATA,$8
 ```
 
-runtime·main(SB)对应的就是runtime.main这个函数：
+runtime·main(SB) corresponds to the runtime.main function:
 
 ```go
 // The main goroutine.
@@ -305,7 +305,7 @@ func main() {
 	// It must not be used for anything else.
 	g.m.g0.racectx = 0
 
-	// 调整协程栈大小，64位最大1GB，32位最大250M
+	// Adjust goroutine stack size, maximum 1GB for 64-bit, 250M for 32-bit
     ...
 
 	// Allow newproc to start new Ms.
@@ -313,20 +313,20 @@ func main() {
 
 	if GOARCH != "wasm" { // no threads on wasm yet, so no sysmon
 		systemstack(func() {
-            // 创建新的m，并执行sysmon，-1表示不预先指定m的id
+            // Create new m and execute sysmon, -1 means no pre-specified m id
 			newm(sysmon, nil, -1)
 		})
 	}
 
-    // 注意，现在执行的是main goroutine，当前线程是主线程，
-    // 调用该方法将是的main goroutine绑定调度线程到主线程，
-    // 意味着我们可以断定，main.main这个函数永远运行在主线程之上，除非之后解绑
+    // Note, we're now executing the main goroutine, and the current thread is the main thread.
+    // Calling this method will bind the main goroutine to the main thread,
+    // meaning we can be certain that main.main will always run on the main thread, unless unbound later
 	lockOSThread()
     ...
 
-    // 这里就是执行runtime package下的初始化逻辑：
-    // - 每个package都有一些import进来的依赖，这些import的package需要做初始化逻辑；
-    // - 每个package内部的func init()需要在初始化完依赖之后完成调用；
+    // Here we execute the initialization logic of the runtime package:
+    // - Each package has some imported dependencies, and these imported packages need initialization logic;
+    // - Each package's internal func init() needs to be called after its dependencies are initialized;
 	doInit(&runtime_inittask) // must be before defer
 	...
 
@@ -339,7 +339,7 @@ func main() {
 	}()
 	...
 
-    // 在调用用户编写的程序代码之前，开启gc，这里并没有创建独立线程来做gc，可能以后会
+    // Before calling user-written program code, enable gc. Note that this doesn't create a separate thread for gc, maybe later
 	gcenable()
 
 	main_init_done = make(chan bool)
@@ -351,36 +351,37 @@ func main() {
 		cgocall(_cgo_notify_runtime_init_done, nil)
 	}
 
-    // 初始化main package，包括其import的依赖，以及main package下的func init()
+    // Initialize main package, including its imported dependencies and func init() in the main package
 	doInit(&main_inittask)
-	// main package初始化完成
+	// main package initialization complete
 	close(main_init_done)
 
 	needUnlock = false
     
-    // 注意，此处又将当前goroutine与thread做了分离，看来go的设计者只是想
-    // 将某些初始化动作放在main thread上完成，并不想事后仍然特殊对待main goroutine，
-    // main goroutine和其他goroutine一样，可以由scheduler选择其他线程对其进行调度
+    // Note, here we unbind the current goroutine from the thread again. It seems the Go designers
+    // only wanted to perform certain initialization actions on the main thread, and didn't want to
+    // treat the main goroutine specially afterward. The main goroutine, like other goroutines,
+    // can be scheduled by the scheduler to run on other threads
 	unlockOSThread()
 
-    // 如果编译成的是静态库、动态库，虽然有main函数，但是不能执行
+    // If compiled as a static library or dynamic library, even though there's a main function, it can't be executed
 	if isarchive || islibrary {
 		return
 	}
     
-    // 注意，调用main_main，其实就是main.main，请查看前面的go directive定义：
-    // 就是//go:linkname main_main main.main，对main_main的调用将转入main.main
+    // Note, calling main_main is actually main.main, see the go directive definition above:
+    // //go:linkname main_main main.main, the call to main_main will transfer to main.main
     //
-	// 因为前面已经解绑了main goroutine和main thread的关系，所以我们唯一可以断定的，
-    // 是main.main方法是执行在main goroutine上的，但是不一定在main thread上
+	// Since we've already unbound the main goroutine from the main thread, the only thing we can be certain of
+    // is that the main.main method is executed on the main goroutine, but not necessarily on the main thread
 	fn := main_main 
 	fn()
 	if raceenabled {
 		racefini()
 	}
 
-	// main.main结束，意味着整个程序准备结束，
-    // 如果有panic发生，会通知所有协程打印堆栈
+	// When main.main ends, it means the entire program is ready to end.
+    // If a panic occurs, it will notify all goroutines to print their stacks
 	if atomic.Load(&runningPanicDefers) != 0 {
 		// Running deferred functions should not take long.
 		for c := 0; c < 1000; c++ {
@@ -399,11 +400,11 @@ func main() {
 }
 ```
 
-这里我们分析了go程序启动的一个流程，以及我们可以得出的一个非常重要的结论：
+Here we've analyzed the startup process of a Go program and can draw a very important conclusion:
 
-> main.main方法是由main goroutine来执行，但是main goroutine不一定由main thread来调度执行。
+> The main.main method is executed by the main goroutine, but the main goroutine is not necessarily scheduled by the main thread.
 >
-> main goroutine和main thread二者之间没有默认的绑定关系！
+> There is no default binding relationship between the main goroutine and the main thread!
 
-明确这点是非常重要的，它将有助于我们理解`godbg attach <pid>`之后为什么main方法没有停下来的问题。
+Understanding this is very important, as it will help us understand why the main method doesn't stop when using `godbg attach <pid>`.
 

@@ -1,61 +1,59 @@
-## 扩展阅读：解释下语法分析和语义分析的区别
+## Extended Reading: Explaining the Difference Between Syntax Analysis and Semantic Analysis
 
-### 回顾编译过程
+### Review of the Compilation Process
 
-学习过编译原理的话，编译过程包含的主要步骤，我们应该都有这方面认识。Go编译期编译过程主要包含这么几个步骤：
+If you've studied compiler principles, you should be familiar with the main steps of the compilation process. The Go compiler's compilation process mainly includes the following steps:
 
-- 词法分析（Lexical Analysis）：将源代码转换为单词流（tokens），识别关键字、标识符、运算符等；
-- 语法分析（Syntax Analysis）：将 token 流解析为抽象语法树（AST）；
-- 语义分析（Semantic Analysis）：检查 AST 的语义，处理变量声明、类型检查、作用域等；
-- 中间代码生成（Intermediate Code Generation）：将 AST 转换为静态单赋值（SSA）形式，便于优化；
-- 目标代码生成（Target Code Generation）：将 SSA 中间表示转换为平台特定的汇编代码；
+- Lexical Analysis: Converts source code into a stream of tokens, recognizing keywords, identifiers, operators, etc.
+- Syntax Analysis: Parses the token stream into an Abstract Syntax Tree (AST).
+- Semantic Analysis: Checks the semantics of the AST, handling variable declarations, type checking, scoping, etc.
+- Intermediate Code Generation: Converts the AST into Static Single Assignment (SSA) form for optimization.
+- Target Code Generation: Converts the SSA intermediate representation into platform-specific assembly code.
 
-> ps: ELF 符号表和调试信息（DWARF），编译器在处理中间代码时，会收集符号信息并生成 DWARF 调试数据。
+> Note: For ELF symbol tables and debug information (DWARF), the compiler collects symbol information and generates DWARF debug data while processing intermediate code.
 
-### 语法 vs 语义
+### Syntax vs. Semantics
 
-其中语法分析、语义分析，没有其他几个步骤字面上区分度那么高，如果没有亲自尝试写编译器，只是看这个术语本身的话，很容易混淆它们的不同。其实，**语法分析和语义分析，是有明显不同之处的：**
+Among these, syntax analysis and semantic analysis are not as obviously distinct as the other steps, and if you haven't tried writing a compiler yourself, it's easy to confuse them just from the terminology. In fact, **syntax analysis and semantic analysis are quite different:**
 
-**1. 目标不同**
+**1. Different Goals**
 
-- **语法分析**的主要目的是验证源代码是否符合语言的语法规则，并将其转换为抽象语法树（AST）。这一步骤关注的是代码的结构是否正确，确保没有语法错误。
-- **语义分析**则侧重于理解代码的意义和逻辑。它在生成的AST基础上进行进一步的处理，如类型检查、作用域分析等，以确保代码在语义上是正确的。
+- **Syntax analysis** mainly aims to verify whether the source code conforms to the language's grammar rules and to convert it into an Abstract Syntax Tree (AST). This step focuses on whether the code's structure is correct, ensuring there are no syntax errors.
+- **Semantic analysis** focuses on understanding the meaning and logic of the code. It further processes the generated AST, such as type checking and scope analysis, to ensure the code is semantically correct.
 
-**2. 输入与输出不同**
+**2. Different Inputs and Outputs**
 
-- **语法分析**的输入是源代码文本，其输出是一个抽象语法树（AST），表示代码的结构。
-- **语义分析**的输入是抽象语法树（AST），其输出是对程序进行了一系列语义检查和处理后的中间表示，确保每个元素在类型和逻辑上都是合理的。
+- **Syntax analysis** takes the source code text as input and outputs an AST representing the code's structure.
+- **Semantic analysis** takes the AST as input and outputs an intermediate representation after a series of semantic checks and processing, ensuring each element is logically and type-wise correct.
 
-**3. 关注点不同**
+**3. Different Focuses**
 
-- 在**语法分析**中，编译器关注的是代码的形式结构，比如词法单元是否正确组合成有效的语句和表达式。
-- 而在**语义分析**中，编译器不仅检查结构的正确性，还要确保变量的使用符合其声明类型，函数调用参数与定义一致等。
+- In **syntax analysis**, the compiler focuses on the formal structure of the code, such as whether tokens are correctly combined into valid statements and expressions.
+- In **semantic analysis**, the compiler not only checks structural correctness but also ensures that variables are used according to their declared types, function call arguments match definitions, etc.
 
-**4. 错误类型**
+**4. Error Types**
 
-- **语法分析**过程中发现的错误通常是词法或语法错误，如拼写错误、括号不匹配等。
-- **语义分析**过程中发现的错误是语义错误，如类型不兼容、变量未声明等。
+- Errors found during **syntax analysis** are usually lexical or syntax errors, such as spelling mistakes, unmatched parentheses, etc.
+- Errors found during **semantic analysis** are semantic errors, such as type incompatibility, undeclared variables, etc.
 
-**5. 实现步骤**
+**5. Implementation Steps**
 
-- **语法分析**一般包括：
+- **Syntax analysis** generally includes:
+  - Scanning the source code to generate a token stream.
+  - Parsing the token stream to generate an AST.
+- **Semantic analysis** generally includes:
+  - Building a symbol table to manage variable scopes.
+  - Performing type checking to ensure operations are valid.
+  - Handling semantic information for expressions and statements.
 
-  - 扫描源代码生成token流。
-  - 解析token流生成AST。
-- **语义分析**一般包括：
+**6. Implementation in the Go Compiler**
 
-  - 建立符号表，管理变量的作用域。
-  - 进行类型检查，确保操作的合法性。
-  - 处理表达式和语句的语义信息。
+- **Syntax analysis** is mainly implemented by the `ParseFile()` function in `parser.go`, which generates the AST.
+- **Semantic analysis** is mainly implemented by the `NewNoder()` and `Noder.Emit()` functions in `noder.go`, which process the intermediate representation and perform type checking.
 
-**6. 在Go编译器中的实现**
+**7. Example**
 
-- **语法分析**主要由 `parser.go`文件中的 `ParseFile()`函数实现，生成AST。
-- **语义分析**主要由 `noder.go`文件中的 `NewNoder()`和 `Noder.Emit()`函数实现，处理中间表示并进行类型检查。
-
-**7. 示例**
-
-举个简单的例子：
+Here's a simple example:
 
 ```go
 func main() {
@@ -64,11 +62,10 @@ func main() {
 }
 ```
 
-- **语法分析**会将这段代码转换为一个AST，包含函数定义、变量声明和赋值操作。
-- **语义分析**则会在生成的AST基础上检查：
+- **Syntax analysis** will convert this code into an AST, including the function definition, variable declaration, and assignment operation.
+- **Semantic analysis** will check on the generated AST:
+  - Whether `a` is correctly declared in scope.
+  - Whether the assignment of 5 is compatible with the int type.
+  - Whether other operations, such as function calls, conform to semantic rules.
 
-  - `a`是否在作用域内被正确声明。
-  - 赋值操作中5是否与int类型兼容。
-  - 函数调用等其他可能的操作是否符合语义规则。
-
-通过以上步骤和示例，可以看出语法分析和语义分析虽然都是编译过程中的关键阶段，但它们关注的焦点和处理的内容是不同的。语法分析确保代码的结构正确，而语义分析则确保代码在逻辑上合理且无误。
+Through the above steps and example, you can see that while syntax analysis and semantic analysis are both key stages in the compilation process, they focus on different aspects and handle different content. Syntax analysis ensures the code's structure is correct, while semantic analysis ensures the code is logically sound and error-free.
